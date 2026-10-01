@@ -3,6 +3,7 @@
 // around the studio in search of its muse).
 import * as THREE from './vendor/three.min.js';
 import { FlyModel, canvasTex } from './fly-model.js';
+import { LivePainter, tipAt } from './hand/render.js';
 
 const TAU = Math.PI * 2;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -176,7 +177,11 @@ export class Studio3D {
     x.fillStyle = '#f7f3ea'; x.fillRect(0, 0, W, H);
     if (!this.img) { this.boardTex.needsUpdate = true; return; }
     const N = this.bands, u = clamp(this.reveal, 0, 1);
-    if (u >= 1) x.drawImage(this.img, 0, 0, W, H);
+    if (this.live && u < 1) {                 // a hand-drawn design: replay its real strokes
+      x.fillStyle = this.live.bg || '#ffffff'; x.fillRect(0, 0, W, H);
+      const cur = this.live.painter.frame(x, u);
+      if (cur && cur.c !== this.live.col) { this.live.col = cur.c; this.pencil.children[0].material.color.set(cur.c); this.pencil.children[2].material.color.set(cur.c); }
+    } else if (u >= 1) x.drawImage(this.img, 0, 0, W, H);
     else {
       const done = Math.floor(u * N), frac = u * N - done, bh = H / N;
       x.save(); x.beginPath();
@@ -194,6 +199,7 @@ export class Studio3D {
     this.boardTex.needsUpdate = true;
   }
   _pencilUV(u) {
+    if (this.live) { const [px, py] = tipAt(this.live.ops, clamp(u, 0, 1)); return [clamp(px / this.live.w, 0, 1), clamp(py / this.live.h, 0, 1)]; }
     const N = this.bands, done = Math.min(N - 1, Math.floor(u * N)), frac = clamp(u * N - done, 0, 1);
     const rtl = done % 2 === 1;
     const wig = Math.sin(u * 180) * 0.35;
@@ -207,14 +213,15 @@ export class Studio3D {
     x.strokeStyle = 'rgba(0,0,0,.06)'; for (let i = 0; i < 1400; i += 40) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i, 1000); x.stroke(); } for (let i = 0; i < 1000; i += 40) { x.beginPath(); x.moveTo(0, i); x.lineTo(1400, i); x.stroke(); }
     x.fillStyle = '#1d1d1f'; x.font = '700 150px "Caveat", cursive'; x.fillText('Hi! I design.', 150, 420);
     x.font = '400 60px "Caveat", cursive'; x.fillStyle = '#444';
-    ['logos · palettes · posters · type', 'floor plans · façades · fashion · UI', 'ask me anything →'].forEach((t, i) => x.fillText(t, 160, 560 + i * 90));
+    ['logos · posters · drawings · paintings', 'palettes · type · floor plans · fashion · UI', 'ask me anything →'].forEach((t, i) => x.fillText(t, 160, 560 + i * 90));
     x.strokeStyle = '#e8590c'; x.lineWidth = 8; x.lineCap = 'round'; x.beginPath(); x.moveTo(150, 460); x.quadraticCurveTo(500, 490, 900, 450); x.stroke();
     this.setImage(c, 1.4, false);
   }
 
   /** show a design on the board; animate = the fly draws it. Resolves when the fly is done. */
-  setImage(img, aspect, animate = true) {
+  setImage(img, aspect, animate = true, live = null) {
     this.img = img;
+    this._pencilColour();
     const W = Math.min(1600, Math.round(1100 * Math.sqrt(aspect))), H = Math.round(W / aspect);
     if (W !== this.bc.width || H !== this.bc.height) {          // a resized canvas needs a fresh GPU texture
       this.bc.width = W; this.bc.height = H;
@@ -224,11 +231,17 @@ export class Studio3D {
     }
     this._layoutBoard(aspect);
     this.bands = aspect > 1.1 ? 7 : 9;
+    this.live = null;
+    if (animate && live?.ops?.length) {
+      const mk = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
+      this.live = { ...live, painter: new LivePainter(live.ops, live.w, live.h, W, H, mk), dur: clamp(3500 + live.ops.length * 22, 7000, 16000) };
+    }
     if (!animate) { this.reveal = 1; this._paintBoard(); return Promise.resolve(); }
     if (this.mode === 'muse') { this.spark.visible = false; const d = this.museDone; this.museDone = null; d?.(null); }
     this.reveal = 0; this._paintBoard();
     return new Promise((res) => { this.queue = []; this._startDraw(res); });
   }
+  _pencilColour() { if (this.pencil?.children?.length > 2) { this.pencil.children[0].material.color.set(0xf2b92c); this.pencil.children[2].material.color.set(0x2a2a2e); } }
   setPalette(hexes) {
     if (!hexes?.length) return;
     this.swatches.forEach((m, i) => m.material.color.set(hexes[i % hexes.length]));
@@ -325,6 +338,38 @@ export class Studio3D {
       notes: { at: new THREE.Vector3(-12.6, 7.4, -10.2), what: 'the sticky notes on the wall' },
       ruler: { at: new THREE.Vector3(-4.5, 0.7, 6.2), what: "the ruler's tick marks" },
     };
+  }
+  /** what the fly sees: render the studio from its point of view (or itself, for a self-portrait) into a small image */
+  snapshot(scene = 'studio', w = 160, h = 120) {
+    const W = this.canvas.width, H = this.canvas.height;
+    if (!W || !H) return null;
+    const cam = new THREE.PerspectiveCamera(scene === 'self' ? 24 : 46, W / H, 0.1, 300);
+    let what;
+    if (scene === 'self') {
+      const p = this.p, f = new THREE.Vector3(p.x, p.y + 0.6, p.z), a = p.th + (Math.random() - 0.5) * 1.2;
+      cam.fov = 20; cam.position.set(f.x + Math.cos(a) * 9, f.y + 0.8 + Math.random() * 1.2, f.z + Math.sin(a) * 9); cam.lookAt(f);
+      what = 'myself';
+    } else if (Math.random() < 0.55) {          // the whole studio, from roughly where you are
+      cam.position.copy(this.camera.position).add(new THREE.Vector3((Math.random() - 0.5) * 8, (Math.random() - 0.4) * 3, (Math.random() - 0.5) * 3));
+      cam.fov = 40; cam.lookAt(this.boardCenter.clone().lerp(new THREE.Vector3(this.p.x, 1, this.p.z), 0.5).add(new THREE.Vector3(0, -1, 0)));
+      what = 'the studio — the easel, the lamp and me';
+    } else {                                    // a still life
+      const S = this.museSpots(), names = { lamp: 'the lamp', cup: 'the pencil cup', mug: 'your coffee mug', fan: 'the swatch fan', notes: 'the sticky notes', ruler: 'the ruler' };
+      const keys = Object.keys(S).sort(() => Math.random() - 0.5).slice(0, 2);
+      const t = S[keys[0]].at.clone().lerp(S[keys[1]].at, Math.random() * 0.4);
+      const dir = new THREE.Vector3(-t.x, 0, 10 - t.z).normalize();
+      cam.position.copy(t).addScaledVector(dir, 6 + Math.random() * 4).add(new THREE.Vector3((Math.random() - 0.5) * 2, 1 + Math.random() * 2, 0));
+      cam.lookAt(t);
+      what = `${names[keys[0]]} and ${names[keys[1]]}`;
+    }
+    cam.updateProjectionMatrix();
+    this.renderer.render(this.scene, cam);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d'), ar = w / h;
+    let sw = W, sh = W / ar; if (sh > H) { sh = H; sw = H * ar; }
+    x.drawImage(this.canvas, (W - sw) / 2, (H - sh) / 2, sw, sh, 0, 0, w, h);
+    this.renderer.render(this.scene, this.camera);
+    return { img: { w, h, data: x.getImageData(0, 0, w, h).data }, url: c.toDataURL('image/png'), what };
   }
   /** fly around the studio looking for inspiration; resolves with the spots it visited (last = where the idea struck) */
   muse() {
@@ -450,7 +495,7 @@ export class Studio3D {
       tgt.flap = m === 'fly_home' && u > 0.92 ? 0 : 1; tgt.wings = 1; tgt.tuck = 1; tgt.pitch = -0.1;
       if (m === 'fly_to_board') { tgt.reach = e; pencilOn = u > 0.4; tipUV = this._pencilUV(0); }
       if (u >= 1) {
-        if (m === 'fly_to_board') { this._setMode('drawing'); this.drawDur = 5200 + Math.random() * 1500; }
+        if (m === 'fly_to_board') { this._setMode('drawing'); this.drawDur = this.live ? this.live.dur : 5200 + Math.random() * 1500; }
         else { p.y = 0; this._setMode('present'); }
       }
     } else if (m === 'drawing') {
@@ -462,7 +507,7 @@ export class Studio3D {
       p.x = lerp(p.x, h.x, 1 - Math.exp(-dt / 110)); p.y = lerp(p.y, h.y + Math.sin(t * 0.004) * 0.08, 1 - Math.exp(-dt / 110)); p.z = lerp(p.z, h.z, 1 - Math.exp(-dt / 110));
       p.th = lerpAngle(p.th, -Math.PI / 2 - 0.42, 1 - Math.exp(-dt / 120));
       tgt.flap = 1; tgt.wings = 1; tgt.tuck = 1; tgt.reach = 1; tgt.pitch = 0.12;
-      if (u >= 1) { this.reveal = 1; this._paintBoard(); this.flight = { from: new THREE.Vector3(p.x, p.y, p.z), to: HOME.clone(), dur: 1400 }; this._setMode('fly_home'); }
+      if (u >= 1) { this.reveal = 1; this.live = null; this._pencilColour(); this._paintBoard(); this.flight = { from: new THREE.Vector3(p.x, p.y, p.z), to: HOME.clone(), dur: 1400 }; this._setMode('fly_home'); }
     } else if (m === 'present') {
       tgt.point = T < 2600 ? 1 : 0; tgt.talk = 0.6; tgt.look = -0.35; tgt.prob = 0.2;
       p.th = lerpAngle(p.th, Math.PI / 2 + 0.55, 1 - Math.exp(-dt / 250));

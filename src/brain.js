@@ -33,6 +33,8 @@ const LINES = {
   product: ['Marker out. Construction lines first.', 'Sketchbook open…'],
   ui: ['Wireframing in my head, painting pixels on the board…', 'Thumb zone: respected.'],
   moodboard: ['Collecting textures and light…', 'Pinning references to the board…'],
+  painting: ['Setting up a canvas — let me look properly first…', 'Squeezing out the paints…', 'Brushes ready. Don’t move.'],
+  drawing: ['Pencil sharpened. Let me try…', 'Drawing from memory — a fly’s memory, so bear with me…', 'Hold still, I’m sketching.'],
 };
 
 const CHIPS = {
@@ -49,6 +51,8 @@ const CHIPS = {
   product: ['Another one', 'A lamp', 'A chair', 'Blue'],
   ui: ['Another one', 'Wireframe', 'Dashboard', 'Landing page', 'Dark mode'],
   moodboard: ['Another one', 'Luxury', 'Scandinavian', 'Palette from it'],
+  painting: ['Paint another view', 'Self-portrait', 'Abstract painting', 'Нарисуй картину студии'],
+  drawing: ['Draw another one', 'Make it darker', 'Draw a cat on the moon', 'Нарисуй ракету'],
 };
 
 const BRAND = new Set(['logo', 'identity', 'card', 'poster', 'ui', 'palette', 'typography', 'pattern', 'moodboard']);
@@ -57,7 +61,7 @@ function buildCreateSpec(kind, ex, last) {
   const newBrand = ex.name || ex.industry;
   if (last && !newBrand && BRAND.has(kind) && BRAND.has(last.kind)) for (const k of ['name', 'industry', 'tagline', 'moods', 'colors', 'pair', 'dark', ...(last.mark === 'genome' && ['logo', 'identity', 'card', 'poster', 'ui'].includes(kind) ? ['mark', 'genome', 'evo'] : [])]) if (last[k] !== undefined && s[k] === undefined) s[k] = last[k];
   if ((ex.moods || ex.colors || ex.harmony) && s.kind === 'palette') { delete s.colors; delete s.moods; }
-  for (const k of ['name', 'tagline', 'industry', 'moods', 'colors', 'dark', 'sketch', 'typeStyle', 'mark', 'bedrooms', 'floors', 'area', 'planType', 'garment', 'print', 'product', 'screen', 'harmony', 'date']) if (ex[k] !== undefined) s[k] = ex[k];
+  for (const k of ['name', 'tagline', 'industry', 'moods', 'colors', 'dark', 'sketch', 'typeStyle', 'mark', 'bedrooms', 'floors', 'area', 'planType', 'garment', 'print', 'product', 'screen', 'harmony', 'date', 'hand', 'subject', 'caption', 'lang', 'scene']) if (ex[k] !== undefined) s[k] = ex[k];
   if (ex.typeStyle) delete s.pair;
   const st = ex[STYLE_KEY[kind]];
   if (st) s.style = st;
@@ -144,13 +148,13 @@ function ruToEn(text) {
 
 // ------------------------------------------------------------------ the muse: ideas found around the studio
 const IDEAS = {
-  lamp: [() => `swiss poster "${pick(['Night Shift', 'Afterglow', 'Slow Light', 'Moth Club', 'Golden Hour'], rnd())}"`, () => 'palette inspired by sunset', () => `gradient poster "${pick(['Afterglow', 'Warm Static', 'Lumen'], rnd())}"`, () => 'Sketch a lamp'],
+  lamp: [() => `Draw a ${pick(['fly', 'bird', 'rocket'], rnd())} flying to the moon`, () => `swiss poster "${pick(['Night Shift', 'Afterglow', 'Slow Light', 'Moth Club', 'Golden Hour'], rnd())}"`, () => 'palette inspired by sunset', () => `gradient poster "${pick(['Afterglow', 'Warm Static', 'Lumen'], rnd())}"`, () => 'Sketch a lamp'],
   cup: [() => `stripes pattern in ${pick(['mustard', 'cobalt', 'coral', 'sage'], rnd())}`, () => `wordmark logo for a stationery shop called ${pick(['Graphite', 'HB Studio', 'Sharp & Co'], rnd())}`, () => 'Hoodie with stripes'],
-  mug: [() => `emblem logo for a coffee shop called ${pick(['Crema', 'Night Owl Roasters', 'Second Cup', 'Bean Here'], rnd())}`, () => 'Sketch a mug', () => 'floor plan for a small cafe', () => 'palette inspired by coffee'],
+  mug: [() => 'Draw a cup of coffee and a croissant', () => `emblem logo for a coffee shop called ${pick(['Crema', 'Night Owl Roasters', 'Second Cup', 'Bean Here'], rnd())}`, () => 'Sketch a mug', () => 'floor plan for a small cafe', () => 'palette inspired by coffee'],
   fan: [() => `${pick(['triadic', 'complementary', 'analogous', 'split'], rnd())} palette in ${pick(['coral', 'teal', 'mustard', 'lavender', 'sage', 'cobalt'], rnd())}`, () => `memphis pattern in ${pick(['pink', 'mint', 'yellow'], rnd())}`, () => 'candy palette'],
   notes: [() => `bauhaus poster "${pick(['To Do', 'Open Studio', 'Notes to Self', 'Sticky Ideas'], rnd())}"`, () => `brutalist poster "${pick(['Deadline', 'Draft 67', 'Post-it'], rnd())}"`, () => 'japandi interior mood board'],
   ruler: [() => `${pick(['2', '3'], rnd())} bedroom apartment floor plan, blueprint`, () => `${pick(['modern', 'scandinavian', 'brutalist'], rnd())} facade with ${pick(['3', '4', '6'], rnd())} floors`, () => 'swiss poster "Grid Systems"', () => 'dashboard wireframe'],
-  wild: [() => `Evolve a logo for ${pick(['Swell', 'Moth & Lamp', 'Paper Plane', 'Nordlys'], rnd())}`, () => `dress with a leaves print`, () => 'Sketch a ceramic vase', () => `brand identity for a ${pick(['plant shop called Fern', 'record shop called Side B', 'bakery called Crumb', 'surf school called Swell'], rnd())}`],
+  wild: [() => `Draw a ${pick(['cat', 'snail', 'robot', 'rocket', 'mushroom', 'fish'], rnd())} looking at the stars`, () => `Evolve a logo for ${pick(['Swell', 'Moth & Lamp', 'Paper Plane', 'Nordlys'], rnd())}`, () => `dress with a leaves print`, () => 'Sketch a ceramic vase', () => `brand identity for a ${pick(['plant shop called Fern', 'record shop called Side B', 'bakery called Crumb', 'surf school called Swell'], rnd())}`],
 };
 const rnd = () => Math.floor(Math.random() * 1e6);
 /** route: [{ k, what }] — the last stop is where the idea struck */
@@ -182,8 +186,8 @@ export function respond(text, state = {}) {
     return { text: `Here's my thinking on the ${KINDS[last.kind]?.label.toLowerCase() || 'design'}:\n${d.notes}\nIf something feels off, tell me what — *"darker"*, *"simpler"*, *"serif"*, *"another one"* — and I'll adjust.`, mood: 'talk', chips: CHIPS[last.kind] };
   }
   if (it.type === 'muse') return { text: pick(['Hold on — I need to find my muse. Back in a few wingbeats…', 'Let me fly around the studio and look for inspiration…', 'Inspiration is never on the desk. Let me look around…'], seed), muse: true, mood: 'think' };
-  if (it.type === 'greet' && /[а-яё]/i.test(text)) return { text: `Hi! I'm the **Designfly** — a fruit fly who designs. I speak English, but I understand Russian requests: *«создай логотип пекарни Колобок»*, *«план 2-комнатной квартиры»*, *«сделай темнее»*. Ask me about design or ask me to draw something.`, mood: 'talk', chips: ['Логотип для кофейни «Синий Боб»', 'Сам придумай логотип без шаблонов', 'Покажи мозг', 'What makes a good logo?'] };
-  if (it.type === 'greet') return { text: `Hi! I'm the **Designfly** — a fruit fly with strong opinions about kerning. Ask me anything about design, or ask me to make something: a logo, palette, poster, floor plan, fashion flat, product sketch, UI…`, mood: 'talk', chips: ['Logo for a coffee shop called Blue Bean', 'Evolve a logo without templates', 'Inspire me', 'Show your brain', '2-bedroom apartment floor plan', 'What makes a good logo?'] };
+  if (it.type === 'greet' && /[а-яё]/i.test(text)) return { text: `Hi! I'm the **Designfly** — a fruit fly who designs. I speak English, but I understand Russian requests: *«создай логотип пекарни Колобок»*, *«план 2-комнатной квартиры»*, *«сделай темнее»*. Ask me about design or ask me to draw something.`, mood: 'talk', chips: ['Логотип для кофейни «Синий Боб»', 'Нарисуй кота и луну', 'Напиши автопортрет', 'Сам придумай логотип без шаблонов', 'Покажи мозг', 'What makes a good logo?'] };
+  if (it.type === 'greet') return { text: `Hi! I'm the **Designfly** — a fruit fly with strong opinions about kerning. Ask me anything about design, or ask me to make something: a logo, palette, poster, floor plan, fashion flat, product sketch, UI…`, mood: 'talk', chips: ['Logo for a coffee shop called Blue Bean', 'Draw a cat looking at the moon', 'Paint a self-portrait', 'Evolve a logo without templates', 'Inspire me', 'Show your brain', '2-bedroom apartment floor plan', 'What makes a good logo?'] };
   if (it.type === 'thanks') return { text: pick(['Happy to help — buzz me any time.', 'My pleasure. Want a variation?', 'Glad you like it! Download it from the card below the drawing.'], seed), mood: 'happy', chips: last ? CHIPS[last.kind] : [] };
   if (it.type === 'help') return { text: helpText(), mood: 'talk', chips: ['Brand identity for a surf school called Swell', 'Swiss poster "Form & Void"', 'Hoodie flat with a graphic print', 'Sketch a ceramic vase'] };
   if (it.type === 'create') {
@@ -196,6 +200,7 @@ export function respond(text, state = {}) {
   }
   if (it.type === 'modify' && last) {
     const { spec, notes } = applyModifiers(text, last);
+    if ((last.kind === 'drawing' || last.kind === 'painting') && spec.hand === false) return { text: `There's no template for a ${last.kind} — I always do those by hand. Want another one?`, mood: 'talk', chips: CHIPS[last.kind] };
     return { text: `On it — ${notes.join(', ')}.`, specs: [normalize({ ...spec, kind: last.kind })], variation: notes.includes('new variation') && spec.mark === 'genome', mood: 'draw', chips: CHIPS[last.kind] };
   }
   // advice
@@ -208,6 +213,7 @@ export function respond(text, state = {}) {
     const chips = [...rel.map((x) => x.k[0][0].toUpperCase() + x.k[0].slice(1)), ...(it.kind ? [`Make a ${KINDS[it.kind].label.toLowerCase()}`] : [])];
     return { text: e.a, mood: 'talk', chips };
   }
+  if (it.kind === 'drawing') { const sub = it.spec.subject?.[0]; return { text: `The best lesson is watching: I'll draw it slowly on the board — first the outline in one confident line, then details, then colour. Construction lines help: start from simple shapes (circles, boxes), then refine.`, mood: 'talk', chips: [sub ? `Draw a ${sub}` : 'Draw a cat', 'Draw a rocket', 'Draw a cat on the moon'] }; }
   if (it.kind) return { text: `Want me to draw one? Give me a name and what it's for — e.g. *"${KINDS[it.kind].label.toLowerCase()} for a bakery called Crumb"*. Or ask me how to design one.`, mood: 'talk', chips: [`Make a ${KINDS[it.kind].label.toLowerCase()}`, `Tips for a ${KINDS[it.kind].label.toLowerCase()}`] };
   return { text: `Hmm, my offline brain doesn't have a sharp answer for that one. I'm best at graphic design, branding, colour, type, UI, architecture, interiors, fashion and product design — and at drawing things. For open-ended chat, plug an AI model into **Settings** and I'll think with it.`, mood: 'think', chips: ['What can you do?', 'Colour theory', 'Font pairing tips', 'Make me a logo'] };
 }
@@ -217,6 +223,8 @@ export function helpText() {
 ${Object.values(KINDS).map((k) => `- **${k.label}** — ${k.about}`).join('\n')}
 
 Talk to me like a designer: *"logo for a coffee shop called Blue Bean, warm and minimal"*, then *"make it darker"*, *"another one"*, *"hand-drawn"*, *"now a business card"*.
+Logos, posters, cards, patterns and drawings I **draw myself, stroke by stroke** (crooked but mine — 👍 / 👎 teaches my hand); say *"template version"* for the clean engine. Ask me to *"draw a cat looking at the moon"* or *«нарисуй ракету»*.
+I also **paint** with a brush — from life (*"paint the studio"*, *«напиши автопортрет»*), from your photo (attach it and say *"paint this"*), from memory or as an abstraction. Every painting is practice: my brushwork gets better.
 I also **answer**: colour theory, contrast checks (*"#777 on #fff"*), what goes with a colour, font pairing, type scales, print sizes, social sizes, UI/UX, floor plans and room sizes, interiors, fashion, product design, portfolio and pricing.
 Drop an **image** and I'll critique it.`;
 }

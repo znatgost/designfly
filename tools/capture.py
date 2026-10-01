@@ -3,7 +3,7 @@
 
   python3 -m http.server 8080 &              # from the repo root
   pip install playwright && playwright install chromium
-  python3 tools/capture.py --what demo       # docs/demo.gif + docs/demo.mp4 (the fly draws a logo)
+  python3 tools/capture.py --what demo       # docs/demo.gif + docs/demo.mp4 (the fly draws a logo by hand, stroke by stroke)
   python3 tools/capture.py --what muse       # docs/muse.gif (the fly looks for inspiration)
   python3 tools/capture.py --what shot       # docs/screenshot.png
   python3 tools/capture.py --what gallery    # docs/gallery.png (a grid of generated designs)
@@ -13,6 +13,10 @@ from playwright.sync_api import sync_playwright
 
 ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 GALLERY = [
+    {'kind': 'logo', 'name': 'Blue Bean', 'industry': 'coffee', 'seed': 100, 'hand': {'layout': 'stack', 'fill': 'riso', 'skill': 0.3}},
+    {'kind': 'drawing', 'subject': ['cat', 'moon'], 'seed': 7, 'hand': {'layout': 'scene', 'skill': 0.3}},
+    {'kind': 'poster', 'name': 'Jazz Night', 'industry': 'music', 'date': '12 June', 'seed': 9, 'hand': {'layout': 'hero', 'skill': 0.3}},
+    {'kind': 'logo', 'name': 'Swell', 'industry': 'surf', 'seed': 3, 'hand': {'layout': 'badge', 'skill': 0.4}},
     {'kind': 'identity', 'name': 'Swell', 'industry': 'surf', 'seed': 11},
     {'kind': 'logo', 'name': 'Blue Bean', 'industry': 'coffee', 'seed': 3, 'style': 'combination'},
     {'kind': 'poster', 'name': 'Form & Void', 'style': 'swiss', 'seed': 8},
@@ -98,16 +102,18 @@ def run(url, what, out):
             shutil.rmtree(tmp)
             return
         if what == 'demo':
+            pg.evaluate("localStorage.setItem('designfly.hand', JSON.stringify({ n: 6, w: { fill: { riso: 6 }, nib: { pen: 6 }, letter: { bold: 6 }, colour: { natural: 6 }, layout: { logo: { stack: 6 } } } })); designfly.taste.constructor && Object.assign(designfly.taste, new designfly.taste.constructor(localStorage)); 1")
             pg.fill('#input', 'Make a logo for a coffee shop called Blue Bean')
             pg.evaluate("() => { designfly.say(document.querySelector('#input').value); return 1; }")
             pg.wait_for_timeout(2500)
-            n = int(11.5 * fps)
+            n = int(24 * fps)
         else:
             pg.evaluate("() => { designfly.say('Inspire me'); return 1; }")
             pg.wait_for_timeout(800)
             n = int(15 * fps)
         for i in range(n):
-            pg.evaluate(step, 1000 / fps)
+            mode = pg.evaluate(step, 1000 / fps)
+            if what == 'demo' and mode == 'idle' and i > 60: break
             if what == 'muse':
                 pg.locator('#studio').screenshot(path=os.path.join(tmp, f'f{i:04d}.png'))
             else:

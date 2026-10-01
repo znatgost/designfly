@@ -121,3 +121,59 @@ test('every muse idea is something the fly can actually draw', async () => {
     if (r.specs) assert.ok(generate(r.specs[0]).svg.startsWith('<svg'));
   }
 });
+
+test('freehand engine: every kind and motif draws, deterministically', async () => {
+  const { MOTIFS } = await import('../src/hand/concepts.js');
+  for (const kind of ['logo', 'poster', 'card', 'pattern', 'drawing']) for (let seed = 1; seed <= 12; seed++) {
+    const spec = { kind, seed, hand: { skill: seed / 12 }, name: seed % 2 ? 'Blue Bean' : 'Колобок', industry: ['coffee', 'bakery', 'surf', 'music'][seed % 4], subject: kind === 'drawing' ? [MOTIFS[seed % MOTIFS.length]] : undefined };
+    const d = generate(spec);
+    wellFormed(d.svg);
+    assert.ok(d.hand && d.ops.length > 10 && !d.svg.includes('<text'), kind + ' is drawn, not typeset');
+    assert.equal(generate(spec).svg, d.svg, 'same spec → same drawing');
+    assert.ok(d.ops.every((o) => o.t1 >= o.t0 && o.t1 <= 1.0000001), 'timeline is ordered');
+  }
+  for (const m of MOTIFS) for (let seed = 1; seed <= 6; seed++) assert.ok(!/NaN/.test(generate({ kind: 'drawing', seed, subject: [m] }).svg), m);
+  assert.notEqual(generate({ kind: 'drawing', seed: 1, subject: ['cat'] }).svg, generate({ kind: 'drawing', seed: 2, subject: ['cat'] }).svg, 'no two cats alike');
+  assert.ok(generate({ kind: 'logo', seed: 3, name: 'X', hand: false }).svg.includes('<text'), 'hand: false → template engine');
+});
+
+test('drawing requests, hand/template switches and the hand learning', async () => {
+  const r = respond('нарисуй кота который смотрит на луну');
+  assert.equal(r.specs[0].kind, 'drawing'); assert.deepEqual(r.specs[0].subject, ['cat', 'moon']);
+  assert.equal(respond('draw a giraffe').specs[0].caption, 'giraffe');
+  assert.equal(respond('логотип пекарни Колобок без шаблонов').specs[0].hand, true);
+  const last = generate({ kind: 'logo', name: 'Crumb', seed: 4, hand: {} }).spec;
+  assert.equal(respond('Template version', { last }).specs[0].hand, false);
+  assert.equal(respond('how to draw a circle?').specs, undefined);
+  assert.equal(respond('Draw a logo for a cat cafe').specs[0].kind, 'logo');
+  const { Taste } = await import('../src/hand/taste.js');
+  const mem = new Map(), st = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: (k) => mem.delete(k) };
+  const t = new Taste(st), s0 = t.skill;
+  for (let i = 0; i < 5; i++) t.feedback('logo', { layout: 'badge', fill: 'riso', nib: 'marker', letter: 'bold', colour: 'natural' }, +1);
+  t.practice();
+  const t2 = new Taste(st);
+  assert.ok(t2.skill > s0 && t2.w.layout.logo.badge > 4 && t2.w.fill.riso > 4, 'likes and practice persist');
+  let badges = 0; for (let i = 0; i < 400; i++) if (t2.sample('logo').layout === 'badge') badges++;
+  assert.ok(badges > 200, 'liked layout is drawn more often');
+});
+
+test('the painter: looks, paints, and gets better with skill', async () => {
+  const { paint } = await import('../src/paint/painter.js');
+  const w = 120, h = 90, data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c = y < 55 ? [100 + y, 160, 235] : [70, 140 - (y - 55), 60];
+    if ((x - 85) ** 2 + (y - 22) ** 2 < 150) c = [250, 210, 60];
+    if (x > 20 && x < 52 && y > 38 && y < 70) c = [200, 60, 50];
+    data.set([...c, 255], (y * w + x) * 4);
+  }
+  const img = { w, h, data };
+  const lo = paint(img, { seed: 1, skill: 0, style: 'broad' }), hi = paint(img, { seed: 1, skill: 1, style: 'fine' });
+  assert.ok(hi.likeness > lo.likeness + 0.03, `skill helps (${lo.likeness.toFixed(2)} → ${hi.likeness.toFixed(2)})`);
+  assert.ok(hi.strokes > lo.strokes && lo.strokes > 50);
+  assert.deepEqual(paint(img, { seed: 1, skill: 0.5 }).ops, paint(img, { seed: 1, skill: 0.5 }).ops, 'deterministic');
+  const d = generate({ kind: 'painting', seed: 5, scene: 'abstract' });
+  wellFormed(d.svg); assert.ok(d.ops.length > 100 && /Abstraction/.test(d.title));
+  const r = respond('напиши автопортрет'); assert.equal(r.specs[0].kind, 'painting'); assert.equal(r.specs[0].scene, 'self');
+  assert.equal(respond('paint a cat').specs[0].scene, 'memory');
+  assert.equal(respond('нарисуй картину').specs[0].scene, 'studio');
+});

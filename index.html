@@ -37,6 +37,7 @@
   <div class="stats">
     <div class="stat"><span id="st-made">0</span><label>designs</label></div>
     <div class="stat" title="The fly's own design mind: 121 neurons that learn your taste"><span id="st-level">—</span><label>mind</label></div>
+    <div class="stat" title="How steady the fly's hand is — it improves with every drawing and with your 👍"><span id="st-hand">15%</span><label>hand</label></div>
     <div class="stat"><span id="st-engine">offline</span><label>brain</label></div>
     <div class="stat"><span id="st-state">idle</span><label>the fly is</label></div>
   </div>
@@ -139,12 +140,13 @@
   <form method="dialog" id="set-form">
     <button class="close" data-close type="button">×</button>
     <h3>The fly's brain</h3>
-    <p class="muted small">By default the fly thinks <b>offline</b>: a built-in design engine plus a hand-written design knowledge base — no key, no server, nothing leaves your browser. Plug in a language model for open-ended conversation; it still draws with the same engine (or freehand SVG).</p>
+    <p class="muted small">By default the fly thinks <b>offline</b>: it draws by hand, stroke by stroke (or uses its clean template engine) plus a hand-written design knowledge base — no key, no server, nothing leaves your browser. Plug in a language model for open-ended conversation; it still draws with the same engine (or freehand SVG).</p>
     <label>Provider <select id="set-provider"></select></label>
     <label id="row-key">API key <input id="set-key" type="password" placeholder="sk-…" autocomplete="off"></label>
     <label id="row-model">Model <input id="set-model" placeholder=""></label>
     <label id="row-base">Base URL <input id="set-base" placeholder="https://…/v1"></label>
     <p class="muted small" id="set-note">The key is stored only in this browser (localStorage) and sent only to the provider you choose.</p>
+    <label class="row"><input type="checkbox" id="set-hand" checked> draw logos, posters, cards and patterns by hand (off = clean template engine)</label>
     <label class="row"><input type="checkbox" id="set-muse" checked> when bored, the fly goes looking for inspiration around the studio</label>
     <div class="v-actions"><button class="btn go" id="set-save" type="submit">Save</button><button class="btn" id="set-test" type="button">Test</button><span class="small" id="set-status"></span></div>
   </form>
@@ -153,7 +155,7 @@
 <div class="loading" id="loading"><div class="load-card"><h2>Setting up the studio…</h2><p class="muted small" id="load-msg">sharpening pencils</p></div></div>
 
 <footer class="foot">
-  Designs are generated in your browser by a procedural engine — fonts: SIL OFL (Google Fonts via Fontsource) · 3D fly from <a href="https://github.com/znatgost/fly67" target="_blank" rel="noopener">FLY67</a> · three.js ·
+  Drawn in your browser by the fly’s own hand (plus a procedural template engine) — fonts: SIL OFL (Google Fonts via Fontsource) · 3D fly from <a href="https://github.com/znatgost/fly67" target="_blank" rel="noopener">FLY67</a> · three.js ·
   <a href="https://github.com/znatgost/designfly#what-is-real-and-what-is-not" target="_blank" rel="noopener">what is real</a>
 </footer>
 

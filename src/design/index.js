@@ -15,6 +15,9 @@ import { MOODS, INDUSTRIES, HARMONIES } from './color.js';
 import { PAIRS } from './type.js';
 import { MARK_NAMES } from './marks.js';
 import { cleanGenome } from '../learn/genome.js';
+import { HAND, HAND_KINDS, handChoices } from '../hand/compose.js';
+import { MOTIFS } from '../hand/concepts.js';
+import { generatePainting, cleanPaint, SCENES } from '../paint/index.js';
 
 export const KINDS = {
   logo:       { fn: generateLogo, label: 'Logo', icon: '◎', styles: LOGO_STYLES, about: 'mark + wordmark, colour variants, app icon' },
@@ -30,7 +33,10 @@ export const KINDS = {
   product:    { fn: generateProduct, label: 'Product sketch', icon: '✎', styles: PRODUCTS, about: 'marker sketch with orthographic views' },
   ui:         { fn: generateUI, label: 'UI mockup', icon: '▢', styles: UI_KINDS, about: 'app screens, landing page or dashboard' },
   moodboard:  { fn: generateMoodboard, label: 'Mood board', icon: '✦', styles: [], about: 'collage, materials, palette, keywords' },
+  painting:   { fn: generatePainting, label: 'Painting', icon: '🖌', styles: SCENES, about: 'a brush painting by the fly: scene ∈ {studio (from life), self (self-portrait), memory (of subject), abstract}' },
+  drawing:    { fn: HAND.drawing, label: 'Drawing', icon: '✏', styles: [], about: 'a freehand drawing of anything (subject: list of things to draw, caption)' },
 };
+export { HAND_KINDS };
 
 /** Clean a spec from any source (intent parser, LLM JSON, gallery storage). */
 export function normalize(spec = {}) {
@@ -53,13 +59,20 @@ export function normalize(spec = {}) {
   if (s.area) s.area = Math.max(20, Math.min(400, +s.area));
   if (s.planType && !PLAN_TYPES.includes(s.planType)) delete s.planType;
   s.sketch = !!s.sketch;
+  if (Array.isArray(s.subject)) s.subject = s.subject.filter((m) => MOTIFS.includes(m)).slice(0, 3); else delete s.subject;
+  if (s.subject && !s.subject.length) delete s.subject;
+  if (s.caption) s.caption = String(s.caption).slice(0, 30);
+  if (s.lang !== 'ru') delete s.lang;
+  if (s.kind === 'painting') { if (!SCENES.includes(s.scene)) s.scene = s.subject?.length ? 'memory' : 'studio'; if (s.paint) s.paint = cleanPaint(s.paint, s.seed); } else { delete s.scene; delete s.paint; }
+  if (s.hand && typeof s.hand === 'object' && HAND_KINDS.includes(s.kind)) s.hand = handChoices(s);
+  else if (!HAND_KINDS.includes(s.kind) || (s.hand !== true && (s.hand !== false || s.kind === 'drawing'))) delete s.hand;
   for (const k of Object.keys(s)) if (s[k] === undefined || s[k] === null || s[k] === '') delete s[k];
   return s;
 }
 
 export function generate(spec) {
   const s = normalize(spec);
-  const d = KINDS[s.kind].fn(s);
+  const d = (s.hand && HAND[s.kind] ? HAND[s.kind] : KINDS[s.kind].fn)(s);
   d.spec = normalize({ ...s, ...d.spec, kind: s.kind, seed: s.seed });
   d.id = `${s.kind}-${s.seed}-${Math.random().toString(36).slice(2, 7)}`;
   return d;
@@ -68,6 +81,6 @@ export function generate(spec) {
 /** a compact schema the LLM gets in its system prompt */
 export function schemaText() {
   return Object.entries(KINDS).map(([k, v]) => `- ${k}: ${v.about}${v.styles.length ? ` · style ∈ {${v.styles.join(', ')}}` : ''}`).join('\n') +
-    `\nCommon fields: name, tagline, industry ∈ {${Object.keys(INDUSTRIES).join(', ')}}, moods ⊂ {${Object.keys(MOODS).join(', ')}}, colors (hex list, first = primary), dark (bool), sketch (bool = hand-drawn look), seed (int).` +
-    `\nExtra: logo.mark ∈ {${MARK_NAMES.filter((m) => m !== 'genome').join(', ')}}, typography/any.pair ∈ {${PAIRS.map((p) => p.id).join(', ')}}, typeStyle ∈ {serif, sans, script, mono, rounded, condensed, elegant, geometric}, floorplan.planType ∈ {${PLAN_TYPES.join(', ')}}, floorplan.bedrooms (1-5), floorplan.area (m²), facade.floors, fashion.garment ∈ {${GARMENTS.join(', ')}}, fashion.print ∈ {none, graphic, stripes, dots, checker, confetti, leaves}, product.product ∈ {${PRODUCTS.join(', ')}}, ui.screen ∈ {${UI_KINDS.join(', ')}}, ui.style ∈ {hifi, wireframe}, poster.details (3 short lines).`;
+    `\nCommon fields: name, tagline, industry ∈ {${Object.keys(INDUSTRIES).join(', ')}}, moods ⊂ {${Object.keys(MOODS).join(', ')}}, colors (hex list, first = primary), dark (bool), sketch (bool = pencil filter on templates), hand (bool: true = the fly draws it freehand stroke by stroke — logo, poster, card, pattern; drawing is always freehand), seed (int).` +
+    `\nExtra: logo.mark ∈ {${MARK_NAMES.filter((m) => m !== 'genome').join(', ')}}, typography/any.pair ∈ {${PAIRS.map((p) => p.id).join(', ')}}, typeStyle ∈ {serif, sans, script, mono, rounded, condensed, elegant, geometric}, floorplan.planType ∈ {${PLAN_TYPES.join(', ')}}, floorplan.bedrooms (1-5), floorplan.area (m²), facade.floors, fashion.garment ∈ {${GARMENTS.join(', ')}}, fashion.print ∈ {none, graphic, stripes, dots, checker, confetti, leaves}, product.product ∈ {${PRODUCTS.join(', ')}}, ui.screen ∈ {${UI_KINDS.join(', ')}}, ui.style ∈ {hifi, wireframe}, poster.details (3 short lines), drawing.subject ⊂ {${MOTIFS.join(', ')}} (things to draw), drawing.caption (short text).`;
 }

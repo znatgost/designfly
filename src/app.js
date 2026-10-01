@@ -3,7 +3,8 @@ import { Studio3D } from './studio3d.js';
 import { respond, critiqueText, museIdea } from './brain.js';
 import { askLLM, PROVIDERS } from './llm.js';
 import { generate, normalize, KINDS } from './design/index.js';
-import { embedFonts, svgToCanvas, svgToPngBlob, svgUrl, svgSize, download, zip, slug } from './export.js';
+import { embedFonts, svgToCanvas, svgToPngBlob, svgUrl, svgSize, download, zip, slug, loadImage } from './export.js';
+import { paintingDesign } from './paint/index.js';
 import { analyzeImage, fileToDataUrl } from './critique.js';
 import { setMeasurer, FONTS } from './design/type.js';
 import { Mind } from './learn/mind.js';
@@ -12,6 +13,10 @@ import { Brain3D } from './brain3d.js';
 import { context } from './design/common.js';
 import { parse } from './intents.js';
 import { rng } from './design/rng.js';
+import { Taste } from './hand/taste.js';
+import { HAND_KINDS } from './hand/compose.js';
+import { conceptsFor } from './hand/concepts.js';
+import { canLetter } from './hand/glyphs.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -23,9 +28,11 @@ const history = [];                 // chat history for the LLM: { role, text }
 let last = LS.get('last', null);    // last engine spec (design context)
 let attached = null;                // dataURL of an attached image
 let busy = false;
-let cfg = { provider: 'offline', key: '', model: '', base: '', muse: true, ...LS.get('cfg', {}) };
+let cfg = { provider: 'offline', key: '', model: '', base: '', muse: true, hand: true, ...LS.get('cfg', {}) };
 delete cfg.six;
 let manual = false;
+let taste = null, lastPhoto = null, restoring = false;
+try { taste = new Taste(localStorage); } catch { taste = new Taste(null); }
 let mind = null, brain3d = null, view = 'studio', evoBrand = null, museReq = null, lastIdea = null;
 
 boot();
@@ -82,7 +89,7 @@ function frame(t) {
 function buildUI() {
   const make = $('#make');
   const quick = [['logo', 'Logo', 'Make a logo for '], ['identity', 'Identity', 'Brand identity for '], ['palette', 'Palette', 'Colour palette for '], ['typography', 'Fonts', 'Font pairing for '], ['poster', 'Poster', 'Swiss poster "'],
-    ['floorplan', 'Floor plan', '2-bedroom apartment floor plan'], ['facade', 'Façade', 'Scandinavian house façade'], ['fashion', 'Fashion', 'Hoodie flat with a graphic print'], ['product', 'Product', 'Sketch a ceramic vase'], ['ui', 'UI', 'Mobile app for '], ['moodboard', 'Mood board', 'Japandi interior mood board'], ['pattern', 'Pattern', 'Terrazzo pattern']];
+    ['floorplan', 'Floor plan', '2-bedroom apartment floor plan'], ['facade', 'Façade', 'Scandinavian house façade'], ['fashion', 'Fashion', 'Hoodie flat with a graphic print'], ['product', 'Product', 'Sketch a ceramic vase'], ['ui', 'UI', 'Mobile app for '], ['moodboard', 'Mood board', 'Japandi interior mood board'], ['pattern', 'Pattern', 'Terrazzo pattern'], ['drawing', 'Drawing', 'Draw a '], ['painting', 'Painting', 'Paint ']];
   for (const [, label, prompt] of quick) {
     const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
     b.onclick = () => { const i = $('#input'); i.value = prompt; i.focus(); i.setSelectionRange(prompt.length, prompt.length); autosize(); };
@@ -116,7 +123,7 @@ function toast(t) { const d = document.createElement('div'); d.className = 'toas
 function updateEngine() { $('#st-engine').textContent = cfg.provider === 'offline' ? 'offline' : (cfg.model || PROVIDERS[cfg.provider].model); }
 
 function openSettings() {
-  $('#set-provider').value = cfg.provider; $('#set-key').value = cfg.key || ''; $('#set-model').value = cfg.model || ''; $('#set-base').value = cfg.base || ''; $('#set-muse').checked = cfg.muse !== false;
+  $('#set-provider').value = cfg.provider; $('#set-key').value = cfg.key || ''; $('#set-model').value = cfg.model || ''; $('#set-base').value = cfg.base || ''; $('#set-muse').checked = cfg.muse !== false; $('#set-hand').checked = cfg.hand !== false;
   syncSettingsRows(); $('#set-status').textContent = ''; $('#settings').showModal();
 }
 function syncSettingsRows() {
@@ -126,7 +133,7 @@ function syncSettingsRows() {
   $('#row-base').classList.toggle('hidden', !['custom', 'openai', 'openrouter'].includes($('#set-provider').value));
   $('#set-model').placeholder = p.model || ''; $('#set-base').placeholder = p.base || '';
 }
-function readSettings() { cfg = { provider: $('#set-provider').value, key: $('#set-key').value.trim(), model: $('#set-model').value.trim(), base: $('#set-base').value.trim(), muse: $('#set-muse').checked }; }
+function readSettings() { cfg = { provider: $('#set-provider').value, key: $('#set-key').value.trim(), model: $('#set-model').value.trim(), base: $('#set-base').value.trim(), muse: $('#set-muse').checked, hand: $('#set-hand').checked }; }
 async function testSettings() {
   readSettings(); const st = $('#set-status');
   if (cfg.provider === 'offline') { st.textContent = 'offline brain is always on ✓'; return; }
@@ -190,6 +197,10 @@ async function send() {
   try {
     const local = text && !img && ['brain', 'dream', 'evolve'].includes(parse(text, last).type);
     if (local) reply = respond(text, { last });
+    if (img && /\b(paint|draw|sketch|portrait)|нарису|картин|напиши|портрет|маслом|красками|акварел/i.test(text) && !/\b(critique|review|feedback|rate|opinion|what do you think|analy[sz]e)\b|оцени|критик|мнение|что скажешь|разбери|как тебе/i.test(text)) {
+      const ru = /[а-яё]/i.test(text);
+      reply = { text: ru ? 'Сначала хорошенько посмотрю… теперь пишу.' : 'Let me look at it properly first… painting now.', specs: [normalize({ kind: 'painting', scene: 'photo', seed: Math.floor(Math.random() * 1e6), lang: ru ? 'ru' : undefined })], photo: img, mood: 'draw', chips: ['Paint it again', 'Abstract painting', 'Self-portrait'] };
+    }
     if (!reply && cfg.provider !== 'offline') {
       try {
         const r = await askLLM(cfg, history, text || 'Please critique this design image. Be specific and actionable.', img, last);
@@ -211,12 +222,20 @@ async function send() {
   if (reply.muse) startMuse(el);
   if (reply.variation && reply.specs?.[0]?.genome) reply.specs[0].genome = mindVariation(reply.specs[0].genome);
   const made = [];
-  for (const sp of reply.specs || []) { try { made.push(makeDesign(sp)); } catch (e) { console.error(e); addMsg('fly', md('I tried to draw that but my pencil broke: ' + e.message), 'err'); } }
+  for (const sp of reply.specs || []) { try { made.push(sp.kind === 'painting' ? await makePainting(sp, reply.photo) : makeDesign(sp)); } catch (e) { console.error(e); addMsg('fly', md('I tried to draw that but my pencil broke: ' + e.message), 'err'); } }
   for (const svg of reply.svgs || []) made.push(customDesign(svg));
   for (const d of made) attachCard(el, d);
+  if (made.length && reply.chips) setChips(handChips(reply.chips, made[made.length - 1]));
   busy = false; $('#send').disabled = false;
   if (made.length) await showOnBoard(made[made.length - 1], true);
   else if (!reply.dream) studio?.setMood(reply.mood || 'talk');
+}
+function handChips(list, d) {
+  if (!HAND_KINDS.includes(d.kind) || d.kind === 'drawing') return list;
+  const swap = d.hand ? 'Template version' : 'Draw it by hand';
+  const out = list.map((c) => (/^hand-drawn( version)?$/i.test(c) ? swap : c));
+  if (!out.includes(swap)) out.splice(Math.min(3, out.length), 0, swap);
+  return out;
 }
 const chipsFor = (kind) => ({ logo: ['Another one', 'Make it darker', 'Hand-drawn version', 'Business card for it'], floorplan: ['Another layout', 'Blueprint style', 'Add a bedroom'] }[kind] || ['Another one', 'Hand-drawn version']);
 
@@ -230,10 +249,66 @@ async function critique(img, text) {
 
 // ------------------------------------------------------------------ designs
 function makeDesign(spec) {
+  spec = { ...spec };
+  if (HAND_KINDS.includes(spec.kind)) {
+    const obj = spec.hand && typeof spec.hand === 'object';
+    const letterable = spec.kind === 'drawing' || canLetter([spec.name, spec.tagline].filter(Boolean).join(' '));
+    if (spec.kind === 'drawing' || (letterable && (spec.hand === true || obj || (spec.hand === undefined && cfg.hand !== false)))) {
+      const styled = spec.style && ['poster', 'pattern'].includes(spec.kind) && !obj && spec.hand !== true;      // "swiss poster", "terrazzo pattern" → that's a template style
+      if (styled) { delete spec.hand; return makeTemplate(spec); }
+      if (!(obj && last && last.kind === spec.kind && last.seed === spec.seed)) {
+        spec.hand = taste.sample(spec.kind); taste.practice(); updateHandStat();
+        const L = { wordmark: 'wordmark', monogram: 'monogram', emblem: 'badge', combination: r01() < 0.5 ? 'stack' : 'side' }[spec.style];
+        if (spec.kind === 'logo' && L) spec.hand.layout = L;
+      }
+      if (spec.kind === 'logo' && !spec.genome && !conceptsFor(spec).length && mind) { const g = mind.favourite(); if (g) spec.genome = g; }
+    } else if (spec.hand !== false) delete spec.hand;
+  }
+  return makeTemplate(spec);
+}
+const r01 = () => Math.random();
+function makeTemplate(spec) {
   const d = generate(spec);
   if (d.kind !== 'svg') { last = d.spec; LS.set('last', last); }
   return addDesign(d);
 }
+async function imageRef(src, what = '', long = 160) {
+  const im = await loadImage(src);
+  const k = long / Math.max(im.naturalWidth || im.width, im.naturalHeight || im.height);
+  const w = Math.max(40, Math.round((im.naturalWidth || im.width) * k)), h = Math.max(30, Math.round((im.naturalHeight || im.height) * k));
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h }), x = c.getContext('2d');
+  x.drawImage(im, 0, 0, w, h);
+  const url = c.toDataURL('image/jpeg', 0.9), back = await loadImage(url);      // paint from exactly what the gallery will store
+  x.clearRect(0, 0, w, h); x.drawImage(back, 0, 0, w, h);
+  return { img: { w, h, data: x.getImageData(0, 0, w, h).data }, url, what };
+}
+async function paintingRef(spec, photo) {
+  if (photo || spec.scene === 'photo') { const src = photo || lastPhoto; if (!src) return null; lastPhoto = src; spec.scene = 'photo'; return imageRef(src, 'your photo'); }
+  if (spec.scene === 'memory' && spec.subject?.length) {
+    const dd = generate({ kind: 'drawing', subject: spec.subject, seed: spec.seed, caption: ' ', hand: { layout: 'study', colour: 'natural', fill: 'flat', nib: 'marker', letter: 'caps', skill: 0.9, guides: false } });
+    return imageRef((await svgToCanvas(dd.svg, 480)).toDataURL('image/png'), spec.subject.join(' and '));
+  }
+  if ((spec.scene === 'studio' || spec.scene === 'self') && studio) { const snap = studio.snapshot(spec.scene); if (snap) return imageRef(snap.url, snap.what); }
+  return null;
+}
+const sawAsset = (d) => d.ref ? [{ name: 'what-i-looked-at.svg', svg: `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${d.w} ${d.h}" width="${d.w}" height="${d.h}"><title>What the fly looked at</title><image href="${d.ref}" xlink:href="${d.ref}" width="${d.w}" height="${d.h}" preserveAspectRatio="none"/></svg>` }] : [];
+async function makePainting(spec, photo) {
+  spec = { ...spec };
+  const fresh = !(spec.paint && last && last.kind === 'painting' && last.seed === spec.seed);
+  if (fresh) spec.paint = taste.sample('painting');
+  let ref = null;
+  const prev = !fresh && designs.findLast((x) => x.kind === 'painting' && x.spec.seed === spec.seed && x.ref);
+  try { ref = prev ? await imageRef(prev.ref, prev.what) : await paintingRef(spec, photo); } catch (e) { console.warn('no reference', e); }
+  if (!ref) spec.scene = 'abstract';
+  if (spec.scene === 'abstract' && !spec.genome && mind && Math.random() < 0.7) { const g = mind.favourite(); if (g) spec.genome = g; }
+  const d = ref ? paintingDesign(ref.img, normalize({ ...spec, kind: 'painting' }), ref.what) : generate({ ...spec, kind: 'painting' });
+  if (ref) { d.ref = ref.url; d.what = ref.what; d.assets = sawAsset(d); }
+  if (fresh) { taste.practicePainting(); updateHandStat(); }
+  d.id = `painting-${d.spec.seed}-${Math.random().toString(36).slice(2, 7)}`;
+  last = d.spec; LS.set('last', last);
+  return addDesign(d);
+}
+function updateHandStat() { const el = $('#st-hand'); if (el && taste) el.textContent = Math.round(taste.skill * 100) + '%'; }
 function customDesign(svg) {
   const { w, h } = svgSize(svg);
   return addDesign({ id: 'svg-' + Date.now().toString(36), kind: 'svg', title: (svg.match(/<title>([^<]+)/)?.[1] || 'Freehand drawing').slice(0, 60), svg, w, h, notes: 'Drawn freehand (SVG written by the language model).', assets: [], spec: null });
@@ -248,7 +323,15 @@ function addDesign(d) {
 }
 function attachCard(el, d) {
   const c = document.createElement('div'); c.className = 'dcard';
-  c.innerHTML = `<button class="pic" title="Open"><img data-id="${d.id}" alt="${esc(d.title)}" src="${d.url}"></button><div class="bar"><b>${esc(d.title)}</b><button class="btn" data-a="svg">SVG</button><button class="btn" data-a="png">PNG</button>${d.assets?.length ? '<button class="btn" data-a="zip">ZIP</button>' : ''}</div>`;
+  c.innerHTML = `<button class="pic" title="Open"><img data-id="${d.id}" alt="${esc(d.title)}" src="${d.url}"></button><div class="bar"><b>${esc(d.title)}</b>${d.hand ? '<button class="btn rate" data-r="1" title="I like this — draw more like it">👍</button><button class="btn rate" data-r="-1" title="Not my taste">👎</button>' : ''}<button class="btn" data-a="svg">SVG</button><button class="btn" data-a="png">PNG</button>${d.assets?.length ? '<button class="btn" data-a="zip">ZIP</button>' : ''}</div>`;
+  c.querySelectorAll('[data-r]').forEach((b) => b.onclick = () => {
+    if (c.dataset.rated) return;
+    const sign = +b.dataset.r; c.dataset.rated = 1; b.classList.add('on');
+    taste.feedback(d.kind, d.kind === 'painting' ? d.spec.paint : d.spec.hand, sign); updateHandStat();
+    const fav = taste.favourites(d.kind);
+    toast(sign > 0 ? (fav.length ? `Noted — I'm getting into ${fav.slice(0, 2).join(' and ')}` : 'Noted — more like this') : 'Noted — less of that');
+    studio?.setMood(sign > 0 ? 'happy' : 'think');
+  });
   c.querySelector('.pic').onclick = () => openViewer(d);
   c.querySelector('img').onload = () => { $('#messages').scrollTop = 1e9; };
   c.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => ({ svg: dlSVG, png: dlPNG, zip: dlZIP })[b.dataset.a](d));
@@ -260,15 +343,26 @@ async function showOnBoard(d, animate) {
   const svg = await d.ready;
   const canvas = await svgToCanvas(svg, 1600);
   studio.setPalette(d.palette?.map((p) => p.hex));
-  await studio.setImage(canvas, d.w / d.h, animate);
+  await studio.setImage(canvas, d.w / d.h, animate, animate && d.ops ? { ops: d.ops, w: d.w, h: d.h, bg: d.bg } : null);
 }
 
 function persistGallery() {
-  LS.set('gallery', designs.slice(-40).map((d) => (d.kind === 'svg' ? (d.svg.length < 120000 ? { svg: d.svg } : null) : { spec: d.spec })).filter(Boolean));
+  if (restoring) return;
+  LS.set('gallery', designs.slice(-40).map((d) => (d.kind === 'svg' ? (d.svg.length < 120000 ? { svg: d.svg } : null) : d.kind === 'painting' ? { painting: { spec: d.spec, ref: d.ref || null, what: d.what || '' } } : { spec: d.spec })).filter(Boolean));
 }
-function restoreGallery() {
+async function restoreGallery() {
   const g = LS.get('gallery', []);
-  for (const item of g) { try { if (item.spec) addDesign(generate(item.spec)); else customDesign(item.svg); } catch {} }
+  restoring = true;
+  for (const item of g) {
+    try {
+      if (item.painting) {
+        const sp = item.painting.spec;
+        if (item.painting.ref) { const ref = await imageRef(item.painting.ref, item.painting.what); const d = paintingDesign(ref.img, sp, ref.what); d.ref = item.painting.ref; d.what = ref.what; d.assets = sawAsset(d); addDesign(d); }
+        else addDesign(generate(sp));
+      } else if (item.spec) addDesign(generate(item.spec)); else customDesign(item.svg);
+    } catch (e) { console.warn('could not restore', e); }
+  }
+  restoring = false; persistGallery();
   if (designs.length) showOnBoard(designs[designs.length - 1], false);
 }
 function renderGallery() {
@@ -296,14 +390,16 @@ function openViewer(d) {
   for (const c of d.palette || []) { const b = document.createElement('button'); b.style.background = c.hex; b.title = `${c.role} ${c.hex} — click to copy`; b.innerHTML = `<span>${c.hex}</span>`; b.onclick = () => { navigator.clipboard?.writeText(c.hex); toast(c.hex + ' copied'); }; pal.appendChild(b); }
   $('#v-zip').classList.toggle('hidden', !d.assets?.length);
   $('#v-var').classList.toggle('hidden', !d.spec); $('#v-sketch').classList.toggle('hidden', !d.spec);
-  $('#v-sketch').textContent = d.spec?.sketch ? '▭ Clean version' : '✎ Hand-drawn';
+  const hk = HAND_KINDS.includes(d.kind) && d.kind !== 'drawing';
+  $('#v-sketch').classList.toggle('hidden', !d.spec || d.kind === 'drawing' || d.kind === 'painting');
+  $('#v-sketch').textContent = hk ? (d.hand ? '▭ Template version' : '✎ Draw it by hand') : d.spec?.sketch ? '▭ Clean version' : '✎ Hand-drawn';
   const as = $('#v-assets'); as.innerHTML = d.assets?.length ? '<p class="muted small" style="margin:0 0 2px">Files in the ZIP:</p>' : '';
   for (const a of d.assets || []) { const l = document.createElement('a'); l.textContent = '↓ ' + a.name; l.onclick = () => dlAsset(d, a); as.appendChild(l); }
   $('#v-svg').onclick = () => dlSVG(d); $('#v-png').onclick = () => dlPNG(d); $('#v-zip').onclick = () => dlZIP(d);
   $('#v-copy').onclick = async () => { navigator.clipboard?.writeText(await d.ready); toast('SVG copied'); };
   $('#v-board').onclick = () => { $('#viewer').close(); showOnBoard(d, true); };
-  $('#v-var').onclick = () => { $('#viewer').close(); const nd = makeDesign({ ...d.spec, seed: d.spec.seed + 1 + Math.floor(Math.random() * 999) }); const el = addMsg('fly', md('A variation:')); attachCard(el, nd); showOnBoard(nd, true); };
-  $('#v-sketch').onclick = () => { $('#viewer').close(); const nd = makeDesign({ ...d.spec, sketch: !d.spec.sketch }); const el = addMsg('fly', md(nd.spec.sketch ? 'Pencil version:' : 'Clean vector version:')); attachCard(el, nd); showOnBoard(nd, true); };
+  $('#v-var').onclick = async () => { $('#viewer').close(); if (d.kind === 'painting') { const nd = await makePainting({ ...d.spec, seed: d.spec.seed + 1 + Math.floor(Math.random() * 999), paint: undefined }, d.spec.scene === 'photo' ? d.ref : null); const el = addMsg('fly', md('Another go:')); attachCard(el, nd); showOnBoard(nd, true); return; } const nd = makeDesign({ ...d.spec, seed: d.spec.seed + 1 + Math.floor(Math.random() * 999) }); const el = addMsg('fly', md('A variation:')); attachCard(el, nd); showOnBoard(nd, true); };
+  $('#v-sketch').onclick = () => { $('#viewer').close(); const nd = makeDesign(hk ? { ...d.spec, hand: !d.hand, sketch: false } : { ...d.spec, sketch: !d.spec.sketch }); const el = addMsg('fly', md(hk ? (nd.hand ? 'Drawing it myself:' : 'Template version:') : nd.spec.sketch ? 'Pencil version:' : 'Clean vector version:')); attachCard(el, nd); showOnBoard(nd, true); };
   $('#viewer').showModal();
 }
 const fname = (d, ext) => `designfly-${slug(d.title)}.${ext}`;
@@ -374,7 +470,7 @@ function mindVariation(g) {
 }
 
 function buildBrainUI() {
-  updateMindHUD();
+  updateMindHUD(); updateHandStat();
   const meter = $('#b-meter'), verdict = $('#b-verdict'), rc = $('#b-retina').getContext('2d');
   mind.on('think', (e) => {
     if (view !== 'brain') return;
@@ -464,7 +560,7 @@ function useMark(brand, c) {
   mind.elites.push({ genome: c.genome, t: Date.now() }); mind.save();
   const d = makeDesign({ kind: 'logo', name: brand.name, industry: brand.industry, colors: brand.colors, moods: brand.moods, mark: 'genome', genome: c.genome, evo: { gen: mind.gen, p: c.p }, seed: brand.seed || 1 });
   const el = addMsg('fly', md(`That one's ours — evolved, not picked from a template. Drawing it up as a full logo for **${esc(brand.name)}**:`));
-  attachCard(el, d); setChips(['Business card for it', 'Full brand identity', 'Another one', 'Hand-drawn version']);
+  attachCard(el, d); setChips(handChips(['Business card for it', 'Full brand identity', 'Another one', 'Hand-drawn version'], d));
   if (view === 'brain') setView('studio');
   showOnBoard(d, true);
 }
@@ -499,7 +595,7 @@ async function startDream(msgEl, ms = 30000, brand = null) {
 
 // ------------------------------------------------------------------ scripting hook (tools/capture.py, console)
 window.designfly = {
-  get studio() { return studio; }, get designs() { return designs; }, get mind() { return mind; }, get brain() { return brain3d; }, setView: (v) => setView(v),
+  get studio() { return studio; }, get taste() { return taste; }, get designs() { return designs; }, get mind() { return mind; }, get brain() { return brain3d; }, setView: (v) => setView(v),
   say: (t) => { $('#input').value = t; return send(); },
   make: (spec) => { const d = makeDesign(spec); return showOnBoard(d, true); },
   manual(on = true) { manual = on; },

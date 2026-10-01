@@ -5,6 +5,7 @@ import { PATTERNS } from './design/pattern.js';
 import { POSTER_STYLES } from './design/brand.js';
 import { FACADE_STYLES } from './design/facade.js';
 import { FONTS } from './design/type.js';
+import { subjectsIn } from './hand/concepts.js';
 
 const KIND_WORDS = [
   ['identity', /\b(brand(ing)? (identity|kit|board|system|guide(lines)?|book)|visual identity|identity|branding|brand kit)\b|айдентик|брендинг|фирменн/i],
@@ -20,6 +21,8 @@ const KIND_WORDS = [
   ['ui', /\b(ui|ux|app (screens?|design|mockup|ui)|mobile app|landing ?page|website|web ?site|home ?page|dashboard|wireframes?|mock-?ups?|interface|screens?)\b|интерфейс|лендинг|сайт|дашборд|приложени/i],
   ['moodboard', /\b(mood ?boards?|inspiration board|interior (design|concept|style|board)|vibe board)\b|мудборд|мood/i],
   ['logo', /\b(logos?|logotypes?|logomarks?|marks?|emblems?|monograms?|wordmarks?|badges?|icons? for (my|a|an|the))\b|логотип|лого\b|эмблем/i],
+  ['painting', /\b(paint(?!\s+(it|this|that|them|one|another)\b)(ing|ings|s)?|canvas|artwork|self[- ]?portrait|portrait|landscape|still life|abstract (art|painting|piece))\b|картин(?!к)|живопис|красками|маслом|акварел|пейзаж|натюрморт|портрет|абстракц/i],
+  ['drawing', /\b(draw(?!\s+(it|this|that|them|one|another)\b)|drawing|doodle|illustration|sketch of|picture of)\b|нарис(?!уй\s+(его|её|ее|это|ещ))|рисун|рисова|иллюстрац|дудл|картинк/i],
 ];
 const CREATE = /\b(make|create|design|draw|sketch|generate|build|craft|produce|render|come up with|give me|show me|i need|i want|we need|can you (do|make|design|draw|create)|could you|would you|let'?s (do|make)|paint|mock ?up|lay ?out)\b|сдела|нарису|созда|придума|набросa|набросай|разработ|покажи/i;
 const QUESTION = /^(how|what|why|which|when|where|who|should|is|are|does|do|can i|could i|tips?|advice|explain|tell me|help me (choose|understand|pick)|difference|compare|best way|any tips)\b|\?$|^(как|что|какой|какая|какие|каким|почему|зачем|сколько|когда|где|можно ли|стоит ли|посоветуй|подскажи|объясни|расскажи|в чём|чем)(?=[\s,]|$)/i;
@@ -79,6 +82,17 @@ export function extract(text) {
   if (/\b(light (mode|background|version)|on white)\b/.test(low)) spec.dark = false;
   if (/\b(sketch(y|ed)?|hand[- ]?drawn|pencil|rough|doodle|by hand|marker)\b|скетч|набросок|от руки|карандаш/.test(low)) spec.sketch = true;
   if (/\b(clean|vector|digital|crisp) (version|look|lines)\b/.test(low)) spec.sketch = false;
+  // freehand engine vs templates
+  if (/\b(without (a |any )?templates?|no templates?|not (a )?templates?|by hand|freehand|free[- ]hand|draw (it|one) (yourself|by hand)|by yourself|on your own|yourself)\b|без шаблон|не шаблон|от руки|сам(а|и)? нарису|своими руками|вручную/.test(low)) spec.hand = true;
+  else if (/\b(templates?|template version|clean template|vector template)\b|шаблон/.test(low)) spec.hand = false;
+  const subj = subjectsIn(t);
+  if (subj.length) spec.subject = subj;
+  const cap = t.match(/(?:\bdraw|\bdoodle|\bsketch of|\bpicture of|\bpaint(?:ing)? of|нарисуй|нарисовать|рисунок|картину|картина)\s+(?:me\s+|мне\s+)?(?:an?\s+|the\s+|some\s+|my\s+)?([^,.!?]{2,28})/i);
+  if (cap && !/^(something|anything|что-нибудь|что-то|чего-нибудь|it|this|that|one|another|logo|логотип|его|её|ее|это|ещ|картин|portrait|автопортрет|студи|studio)/i.test(cap[1]) && !subjectsIn(cap[1].split(/\s+/)[0]).length) spec.caption = cap[1].trim();
+  if (/[а-яё]/i.test(t)) spec.lang = 'ru';
+  if (/\b(self[- ]?portrait|yourself|your own face)\b|автопортрет|себя/.test(low)) spec.scene = 'self';
+  else if (/\babstract|абстрак/.test(low)) spec.scene = 'abstract';
+  else if (/\b(studio|room|from life|still life|what you see|around you)\b|студи|комнат|натур|натюрморт|вокруг/.test(low)) spec.scene = 'studio';
   // type style
   const ts = low.match(/\b(serif|sans[- ]?serif|sans|script|handwritten|mono(space)?|rounded|condensed|elegant|geometric)\b/);
   if (ts) spec.typeStyle = ts[1].startsWith('sans') ? 'sans' : ts[1].startsWith('mono') ? 'mono' : ts[1] === 'handwritten' ? 'script' : ts[1];
@@ -155,12 +169,13 @@ export function parse(text, last) {
   if (/^(help|what can you do|commands|\/help|what do you do|what can i ask|что ты умеешь|что умеешь|помощь|помоги|что ты можешь)(?=[\s!.,?]|$)/i.test(t)) return { type: 'help', raw: t };
   if (/\b(show (me )?(your |the )?(brain|mind|neurons)|your (brain|mind|neurons)|brain view|open (the |your )?brain|neurons?)\b|мозг|нейрон/i.test(t)) return { type: 'brain', raw: t };
   if (/\b(dream|self[- ]?train|practi[cs]e|train yourself|improve yourself|keep learning|go learn|learn on your own|get better)\b|мечта|снов|тренируйся|совершенствуйся|учись сам/i.test(t)) return { type: 'dream', raw: t };
-  if (/\b(evolve|evolution|evolved|breed|teach you|learn my taste|my taste|your own (logo|mark|design|idea)|invent|from scratch|by yourself|on your own|without (a )?templates?|no templates?|genetic)\b|эволю|обучи|научи|мой вкус|свой (знак|логотип)|без шаблон|сам(а)? (придумай|нарисуй|сделай)/i.test(t)) return { type: 'evolve', spec: extract(t), raw: t };
+  if (/\b(evolve|evolution|evolved|breed|teach you|learn my taste|my taste|your own (logo|mark|design|idea)|invent|from scratch|genetic)\b|эволю|обучи|научи|мой вкус|свой (знак|логотип)|сам(а)? (придумай|сделай)/i.test(t)) return { type: 'evolve', spec: extract(t), raw: t };
   const kind = detectKind(t);
   const spec = extract(t);
   const creates = CREATE.test(t);
-  const question = QUESTION.test(t) && !/\b(make|design|draw|create|sketch|generate) (me|us|one|a|an|some)\b/i.test(t) && !/^(can|could|would) you\b/i.test(t);
-  if (kind && (creates || (!question && t.split(/\s+/).length <= 12))) return { type: 'create', kind, spec, raw: t };
+  const howTo = /^(how (do|to|can|should|would)|как (нарисовать|сделать|создать|рисовать|придумать))(?=\s|$)/i.test(t);
+  const question = howTo || (QUESTION.test(t) && !/\b(make|design|draw|create|sketch|generate) (me|us|one|a|an|some)\b/i.test(t) && !/^(can|could|would) you\b/i.test(t));
+  if (kind && !howTo && (creates || (!question && t.split(/\s+/).length <= 12))) return { type: 'create', kind, spec, raw: t };
   if (!kind && last && !question && /^(сделай|сделать|make it|make this)/i.test(t) && MODIFY.test(t)) return { type: 'modify', spec, raw: t };
   if (!kind && last && !question && (MODIFY.test(t) || (Object.keys(spec).length && t.split(/\s+/).length <= 8))) return { type: 'modify', spec, raw: t };
   if (!kind && last && !question && t.split(/\s+/).length <= 4) return { type: 'modify', spec, raw: t };
@@ -208,6 +223,7 @@ export function applyModifiers(text, last) {
   if (/\b(other|different|new|change the) (font|typeface|type)\b/.test(low)) { delete s.pair; s.seed = (s.seed || 1) + 7; notes.push('new type'); }
   if ((/\bround(er|ed)?\b/.test(low) || /круглее|округл/.test(low)) && last.kind === 'logo') { s.shape = 'circle'; s.typeStyle = s.typeStyle || 'rounded'; notes.push('rounder'); }
   if (ex.sketch !== undefined) { s.sketch = ex.sketch; notes.push(ex.sketch ? 'hand-drawn' : 'clean'); }
+  if (ex.hand !== undefined) { s.hand = ex.hand; notes.push(ex.hand ? 'drawn by hand' : 'template'); }
   if (/\b(clean|vector|digital|crisp|no sketch|not sketch)\b/.test(low) && !ex.sketch) { s.sketch = false; notes.push('clean'); }
   const rn = text.match(/\b(?:call it|rename (?:it )?(?:to)?|change the name to|name it|named)\s+["“«']?([^"”»'.,!?]{2,40})/i);
   if (rn) { s.name = rn[1].trim(); notes.push('name → ' + s.name); } else if (ex.name && !/^(it|this)$/i.test(ex.name)) { s.name = ex.name; notes.push('name → ' + ex.name); }
