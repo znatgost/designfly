@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DESIGNFLY — an AI fruit fly who designs</title>
+<meta name="description" content="A 3D fruit fly in a design studio: ask it for design advice, or ask it to draw logos, brand identities, palettes, posters, floor plans, façades, fashion flats, product sketches and UI mockups — then download them as SVG / PNG.">
+<meta property="og:title" content="DESIGNFLY — an AI fruit fly who designs">
+<meta property="og:description" content="Logos · identities · palettes · type · posters · floor plans · façades · fashion · product · UI — drawn live on an easel by a fly in a beret.">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e0c0b">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://znatgost.github.io/designfly/">
+<meta property="og:image" content="https://znatgost.github.io/designfly/icons/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="DESIGNFLY — an AI fruit fly who designs">
+<meta name="twitter:description" content="A 3D fly in a design studio: ask it for design advice, or ask it to draw logos, identities, posters, floor plans, fashion flats and UI — and watch its own little brain learn your taste.">
+<meta name="twitter:image" content="https://znatgost.github.io/designfly/icons/og-image.png">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="12" cy="18" rx="8" ry="5" fill="#b8874f"/><circle cx="23" cy="18" r="4" fill="#e23d3d"/><ellipse cx="11" cy="12" rx="7" ry="3" fill="#a8d8ff" opacity=".55"/><ellipse cx="11" cy="24" rx="7" ry="3" fill="#a8d8ff" opacity=".55"/><ellipse cx="23.4" cy="13.6" rx="5.2" ry="2" fill="#1b1b22"/><circle cx="23.6" cy="11.4" r=".9" fill="#1b1b22"/><path d="M29 22l2.6 5" stroke="#f2b92c" stroke-width="1.6" stroke-linecap="round"/></svg>
+    <div>
+      <h1>DESIGNFLY</h1>
+      <p>an AI fruit fly who designs</p>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><span id="st-made">0</span><label>designs</label></div>
+    <div class="stat" title="The fly's own design mind: 121 neurons that learn your taste"><span id="st-level">—</span><label>mind</label></div>
+    <div class="stat"><span id="st-engine">offline</span><label>brain</label></div>
+    <div class="stat"><span id="st-state">idle</span><label>the fly is</label></div>
+  </div>
+  <div class="controls">
+    <button id="btn-settings" title="AI model & settings">⚙ Brain</button>
+    <a class="gh" href="https://github.com/znatgost/designfly" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</header>
+
+<main>
+  <section class="left">
+    <div class="panel studio">
+      <canvas id="studio" aria-label="3D studio with the designer fly"></canvas>
+      <div class="studio-ui">
+        <div class="views" role="group" aria-label="Camera">
+          <button data-view="studio" class="on">Studio</button>
+          <button data-view="board">Board</button>
+          <button data-view="fly">Fly</button>
+          <button data-view="brain" class="bview">🧠 Brain</button>
+        </div>
+        <button id="btn-muse" class="ghost" title="send the fly to look for inspiration">✦ Muse</button>
+      </div>
+      <div class="hint">drag to orbit · scroll to zoom · click the board to open the design</div>
+      <div class="drawing hidden" id="drawing">✎ drawing on the board…</div>
+      <div class="brainwrap hidden" id="brainwrap">
+        <canvas id="brain" aria-label="3D view of the fly's design mind"></canvas>
+        <div class="b-overlay" id="b-overlay"></div>
+        <div class="b-hud">
+          <div class="b-level"><span class="lv" id="b-lv">1</span><div><b id="b-title">Larva</b><small id="b-lessons">0 lessons</small></div></div>
+          <div class="b-acc"><label>taste accuracy <span class="muted">(predicting your picks)</span></label><div class="row"><b id="b-acc">—</b><canvas id="b-spark" width="160" height="34"></canvas></div></div>
+          <p class="b-sub" id="b-sub">121 neurons · 2,353 synapses</p>
+        </div>
+        <div class="b-see">
+          <label>what it sees</label>
+          <div class="row"><div class="mk" id="b-mark"></div><canvas id="b-retina" width="32" height="32"></canvas></div>
+          <div class="meter"><i id="b-meter"></i></div>
+          <span class="small" id="b-verdict">—</span>
+        </div>
+        <div class="b-actions">
+          <button class="btn go" id="b-evolve">🧬 Evolve with me</button>
+          <button class="btn" id="b-dream">💤 Dream 30 s</button>
+          <button class="btn" id="b-export" title="Download the mind (weights + memory) as JSON">⇩</button>
+          <label class="btn" title="Load a mind from JSON">⇧<input type="file" id="b-import" accept="application/json" hidden></label>
+          <button class="btn" id="b-reset" title="Forget everything">↺</button>
+        </div>
+        <div class="b-hint">drag to orbit · scroll to zoom · hover a neuron · double-click: auto-rotate</div>
+      </div>
+    </div>
+    <div class="panel gallery">
+      <div class="gal-head"><h2>Gallery <span class="muted small" id="gal-count"></span></h2><button id="btn-clear" class="link">clear</button></div>
+      <div class="gal-strip" id="gallery"><p class="muted small empty">Everything the fly draws lands here. Click to open, download SVG / PNG / ZIP.</p></div>
+    </div>
+  </section>
+
+  <section class="panel chat">
+    <div class="chat-head">
+      <h2>Chat with the fly</h2>
+      <div class="make" id="make"></div>
+    </div>
+    <div class="messages" id="messages" aria-live="polite"></div>
+    <div class="chips" id="chips"></div>
+    <form class="composer" id="composer">
+      <label class="attach" title="Attach an image for critique"><input type="file" id="file" accept="image/*" hidden>📎</label>
+      <div class="input-wrap">
+        <div class="attached hidden" id="attached"><img alt=""><button type="button" id="unattach" title="remove">×</button></div>
+        <textarea id="input" rows="1" placeholder="Ask for advice or say “make a logo for…”" autocomplete="off"></textarea>
+      </div>
+      <button type="submit" class="send" id="send" title="Send (Enter)">➤</button>
+    </form>
+  </section>
+</main>
+
+<dialog id="viewer" class="viewer">
+  <div class="v-wrap">
+    <div class="v-img"><img id="v-img" alt=""></div>
+    <aside class="v-side">
+      <button class="close" data-close>×</button>
+      <p class="kind" id="v-kind"></p>
+      <h3 id="v-title"></h3>
+      <div class="v-notes" id="v-notes"></div>
+      <div class="v-pal" id="v-pal"></div>
+      <div class="v-actions">
+        <button class="btn go" id="v-svg">↓ SVG</button>
+        <button class="btn go" id="v-png">↓ PNG</button>
+        <select id="v-scale" title="PNG size"><option value="1600">1600 px</option><option value="3200" selected>3200 px</option><option value="6400">max (≈16 MP)</option></select>
+        <button class="btn go" id="v-zip">↓ ZIP (all files)</button>
+      </div>
+      <div class="v-actions">
+        <button class="btn" id="v-var">↻ Variation</button>
+        <button class="btn" id="v-sketch">✎ Hand-drawn</button>
+        <button class="btn" id="v-board">Show on board</button>
+        <button class="btn" id="v-copy">Copy SVG</button>
+      </div>
+      <div class="v-assets" id="v-assets"></div>
+    </aside>
+  </div>
+</dialog>
+
+<dialog id="settings" class="settings">
+  <form method="dialog" id="set-form">
+    <button class="close" data-close type="button">×</button>
+    <h3>The fly's brain</h3>
+    <p class="muted small">By default the fly thinks <b>offline</b>: a built-in design engine plus a hand-written design knowledge base — no key, no server, nothing leaves your browser. Plug in a language model for open-ended conversation; it still draws with the same engine (or freehand SVG).</p>
+    <label>Provider <select id="set-provider"></select></label>
+    <label id="row-key">API key <input id="set-key" type="password" placeholder="sk-…" autocomplete="off"></label>
+    <label id="row-model">Model <input id="set-model" placeholder=""></label>
+    <label id="row-base">Base URL <input id="set-base" placeholder="https://…/v1"></label>
+    <p class="muted small" id="set-note">The key is stored only in this browser (localStorage) and sent only to the provider you choose.</p>
+    <label class="row"><input type="checkbox" id="set-muse" checked> when bored, the fly goes looking for inspiration around the studio</label>
+    <div class="v-actions"><button class="btn go" id="set-save" type="submit">Save</button><button class="btn" id="set-test" type="button">Test</button><span class="small" id="set-status"></span></div>
+  </form>
+</dialog>
+
+<div class="loading" id="loading"><div class="load-card"><h2>Setting up the studio…</h2><p class="muted small" id="load-msg">sharpening pencils</p></div></div>
+
+<footer class="foot">
+  Designs are generated in your browser by a procedural engine — fonts: SIL OFL (Google Fonts via Fontsource) · 3D fly from <a href="https://github.com/znatgost/fly67" target="_blank" rel="noopener">FLY67</a> · three.js ·
+  <a href="https://github.com/znatgost/designfly#what-is-real-and-what-is-not" target="_blank" rel="noopener">what is real</a>
+</footer>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>

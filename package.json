@@ -1,0 +1,31 @@
+{
+  "name": "designfly",
+  "version": "1.0.0",
+  "description": "An AI fruit fly who designs: a 3D fly in a design studio that gives design advice and draws logos, identities, palettes, posters, floor plans, fa\u00e7ades, fashion flats, product sketches and UI mockups \u2014 downloadable as SVG / PNG / ZIP.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Ruben Nugmanov (znatgost)",
+  "repository": "github:znatgost/designfly",
+  "keywords": [
+    "design",
+    "generative-design",
+    "logo-generator",
+    "branding",
+    "floor-plan",
+    "fashion",
+    "svg",
+    "threejs",
+    "ai",
+    "fruit-fly"
+  ],
+  "scripts": {
+    "start": "npx --yes serve -l 8080 .",
+    "test": "node --test test/*.test.mjs",
+    "fonts": "node tools/fetch_fonts.mjs",
+    "three": "bash tools/build_three.sh",
+    "capture": "python3 tools/capture.py --what demo"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
