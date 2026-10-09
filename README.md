@@ -23,14 +23,22 @@ Logos, posters, business cards, pattern sheets and free drawings (*"draw a cat l
 - **It learns.** 👍 / 👎 on a hand-drawn design shifts which layouts, nibs, colouring and lettering it reaches for; every drawing is practice, so the **hand** stat (steadiness) climbs and lines get calmer. No obvious object for a brand? It draws the favourite mark of its evolved mind instead.
 - Say **"template version"** for the clean engine (or switch hand-drawing off in ⚙ Brain), **"draw it by hand"** to go back.
 
-## It paints 🖌
+## It paints — with its own neural network 🖌🧠
 
-*"Paint the studio"*, *«напиши автопортрет»*, *"abstract painting"*, *"paint a cat"*, or attach a photo and say *"paint this"*.
+*"Practise painting"* · *«научись рисовать»* · *"paint the studio"* · *«напиши автопортрет»* · *"imagine a painting"* · *«научу тебя рисовать кота»* · a photo + *«это кот»*
 
-- **It looks first.** The reference is real: the fly renders the 3D studio from its own point of view (a corner with the lamp and your mug, the whole room — or itself, for a self-portrait), takes your photo, recalls its own sketch of the subject, or imagines a colour field around one of the shapes its mind evolved. You can download *what it looked at* next to the painting.
-- **Then it paints, stroke by stroke.** It squeezes a few tubes of paint from the colours it sees and mixes each colour from two of them. Big brush first, smaller ones later. Every stroke starts where its canvas differs most from what it sees and is pulled along the edges of the form. Before committing a stroke it checks that the stroke actually brings the canvas closer (a beginner skips the check now and then). No recipes, no templates — the same scene never comes out the same twice.
-- **It learns.** Skill grows with every painting and every 👍: more layers, finer brushes, more tubes, more precise mixing, a steadier hand. The *likeness* to what it saw is reported on each painting, so you can watch it climb. 👍 / 👎 also tune its brushwork (broad, fine, dabs, scribble), colour (true, warm, cool, vivid, muted) and ground (white, sienna, grey, paper).
-- The board replays the painting live, coarse to fine; the gallery stores the small reference and repaints it on reload.
+![the artist brain learning: what it looks at, newborn, after practice](docs/artist.png)
+
+The fly has an **artist brain**: two neural networks (≈1.6 M weights) that are born empty and learn in your browser, offline, with TensorFlow.js in a Web Worker (WebGL when your GPU is available there, CPU otherwise), so practising never freezes the studio. Nothing about pictures is built in — a newborn makes a colourful mess (see the picture above).
+
+- **The hand** looks at what it wants to paint and at its own canvas (and where they differ) and decides the next brush stroke: a curved stroke with a position, a bend, a width, an opacity and a colour adjustment (the brush picks up the colour it sees under itself; the network learns how to correct it). It learns by **practising**: it paints the things it sees in its 3D studio, stroke after stroke, and after each stroke follows the gradient of *"did that get me closer?"* through a differentiable brush. Its error on fresh pictures is measured before and after every session and shown in the chat, together with what it looked at and its attempt.
+- **The eye** is a small variational autoencoder trained on everything the fly has looked at. It remembers pictures as 16 numbers; decoding new numbers is the fly **imagining** something — *"imagine a painting"* paints that. 👍 on an imagined painting steers its imagination toward what you liked.
+- **Teaching.** *«Научу тебя рисовать кота»* opens a drawing pad: draw it, name it, and the fly remembers your drawing and practises on it. Or send a photo with *«это кот»*. Next time you ask for a cat, it paints one from memory with its own hand. Things it has never been shown, it says so.
+- **Painting.** Coarse to fine: for every tile of the canvas (1 → 4 → 12 → 48 tiles) the hand proposes a stroke plus a few variations of it, and the fly keeps the one that gets closest — a stroke that would make things worse is not painted. The board replays every stroke.
+- **It keeps learning.** When idle it practises for a few seconds now and then (switch off in ⚙ Brain). Levels: Newborn → Scribbler → Smudger → Dauber → Sketcher → Student → Painter → Colourist → Impressionist → Master. The brain lives in IndexedDB; ⇩ / ⇧ export and import it.
+- If TensorFlow.js can't start, the fly falls back to its older rule-based painter (`src/paint/`).
+
+![practising: what it looks at, its attempt, what it imagines, the error going down](docs/practice.png)
 
 ## The fly's own mind 🧠
 
@@ -122,7 +130,7 @@ Honesty about this is part of the project.
 **Simplified**
 - The offline "AI" is a **rule-based** parser and a curated knowledge base, not a neural network. It understands a lot of design phrasing but not everything — plug in a model for free-form chat.
 - Identities, palettes, type, floor plans, façades, fashion, product, UI and mood boards come from the **template engine**: marks, layouts and typologies are hand-designed; name, industry, mood, colours, style and seed drive the choices.
-- **Paintings** are painted from a real reference, but the fly has no idea *what* it paints — it matches colours and edges, it doesn't understand objects. Its learning is a skill curve plus preference weights, not a neural net.
+- **The artist brain is real but small.** Two little networks trained only on what this fly has seen in your browser: its paintings are blobby, impressionistic and get better slowly — think a child with a brush after an afternoon, not an image model. It only knows things it has seen or you taught it; it doesn't understand objects. Training speed depends on your GPU (seconds of practice ≈ hundreds of steps on a decent laptop).
 - The **freehand engine** draws for real, but from a vocabulary of ~60 things it knows how to construct out of strokes — it is not an image model. It doesn't see what it draws (except the evolved marks, which the mind judges), and its "learning" of the hand is a preference weighting over styles plus a practice counter, not a neural net. Crooked is on purpose.
 - Floor plans and façades are **concept sketches**, not construction documents: no structure, codes or stairs.
 - Mood-board "photos" are abstract placeholders for atmosphere.
@@ -138,7 +146,7 @@ npm start                 # any static server works: python3 -m http.server
 ```
 
 ```bash
-npm test                  # engine (14 kinds × 25 seeds), freehand engine + every motif, colour math, intents, LLM sanitising, MLP gradient check, the mind learning a simulated taste
+npm test                  # engine, freehand engine + every motif, painter, the artist brain (practise → paint → teach → save/load, CPU), colour math, intents, LLM sanitising, MLP gradient check, the mind learning a simulated taste
 npm run fonts             # re-vendor fonts/ from @fontsource
 npm run three             # rebuild the tree-shaken three.js bundle
 python3 tools/capture.py --what demo|muse|shot|gallery|brain|evolve   # regenerate docs/ media
@@ -166,6 +174,14 @@ src/
     compose.js    freehand logo, poster, card, pattern sheet and drawing; layout choice + best-candidate placement
     render.js     strokes → SVG, the live-drawing timeline, incremental board painter
     taste.js      the hand's habits: 👍/👎 weights, practice → steadiness (drawing and painting)
+  artist/
+    raster.js     a differentiable brush: soft quadratic-Bézier strokes as tensors
+    hand.js       the hand network (sees target, canvas, difference → next stroke) and its training loss
+    eye.js        the eye: a variational autoencoder (memory + imagination)
+    artist.js     practice loop, coarse-to-fine painting, teaching, imagination, save/load
+    store.js      IndexedDB key-value store for the weights
+    worker.js     runs the artist brain in a Web Worker (WebGL there if it's really accelerated, else CPU)
+    client.js     the main thread's handle on the worker (falls back to running in-page)
   paint/
     painter.js    the painter: paint tubes + mixing, layered brushes, strokes grown along edges where the canvas differs most, look-before-you-paint
     index.js      paintings as designs: references (studio, self, photo, memory, abstraction from an evolved shape), notes, likeness
@@ -186,7 +202,7 @@ src/
     marks.js      23 logo marks
     logo.js · palette.js · typography.js · pattern.js · brand.js (identity, card, poster)
     floorplan.js · facade.js · fashion.js · product.js · ui.js · moodboard.js
-  vendor/         three.js r186, tree-shaken (tools/build_three.sh)
+  vendor/         three.js r186, tree-shaken (tools/build_three.sh); TensorFlow.js 4.22 (Apache-2.0)
 icons/            icon.svg, favicons, apple-touch-icon, PWA icons, og-image (tools/make_icons.py)
 fonts/            woff2 (latin + cyrillic) + fonts.css + manifest.json — SIL OFL
 tools/            fetch_fonts.mjs, build_three.sh, capture.py

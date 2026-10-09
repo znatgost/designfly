@@ -6,7 +6,7 @@ import { rng } from '../design/rng.js';
 import { makePalette, hexToRgb } from '../design/color.js';
 import { shapes, randomGenome, cleanGenome } from '../learn/genome.js';
 
-export const SCENES = ['studio', 'self', 'photo', 'memory', 'abstract'];
+export const SCENES = ['studio', 'self', 'photo', 'memory', 'abstract', 'imagine'];
 
 export function cleanPaint(p, seed = 1) {
   const r = rng(seed * 313 + 1), o = {};

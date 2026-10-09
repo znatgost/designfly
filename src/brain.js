@@ -1,5 +1,7 @@
 // The fly's offline brain: intent → reply text + designs to draw + follow-up chips + body language.
 import { parse, applyModifiers, extract } from './intents.js';
+import { subjectsIn } from './hand/concepts.js';
+import { RU_NAME } from './hand/compose.js';
 import { searchKB, byId } from './knowledge.js';
 import { KINDS, normalize, generate as generateDesign } from './design/index.js';
 import { hexToOklch, oklch, contrast, wcag, describe, namedColor, COLOR_WORDS, shade, readableOn, hexToRgb } from './design/color.js';
@@ -51,7 +53,7 @@ const CHIPS = {
   product: ['Another one', 'A lamp', 'A chair', 'Blue'],
   ui: ['Another one', 'Wireframe', 'Dashboard', 'Landing page', 'Dark mode'],
   moodboard: ['Another one', 'Luxury', 'Scandinavian', 'Palette from it'],
-  painting: ['Paint another view', 'Self-portrait', 'Abstract painting', 'Нарисуй картину студии'],
+  painting: ['Paint another view', 'Practise painting', 'Imagine a painting', 'Научу тебя рисовать кота'],
   drawing: ['Draw another one', 'Make it darker', 'Draw a cat on the moon', 'Нарисуй ракету'],
 };
 
@@ -175,6 +177,11 @@ export function respond(text, state = {}) {
   const seed = Math.floor(Math.random() * 1e6);
   if (it.type !== 'create' || !/\b(make|create|design|draw|sketch|generate)\b/i.test(text)) { const calc = calculators(text); if (calc) return { ...calc, mood: 'talk' }; }
   if (it.type === 'brain') return { text: `This is my head. **121 neurons, 2,353 synapses** — an 8×8 retina in the optic lobes, 20 design senses in the antennal lobes, a memory layer in the mushroom bodies, a judgement ring in the central complex and one **taste neuron** at the bottom. Hover a neuron to see what it does; watch it fire when I look at a mark and flash where I learn.`, view: 'brain', mood: 'talk', chips: ['Evolve a logo with me', 'Dream for a minute', 'Back to the studio'] };
+  if (it.type === 'practice') return { text: /[а-яё]/i.test(text) ? 'Иду тренироваться: посмотрю вокруг и буду пробовать писать то, что вижу. Каждая попытка учит мою руку — смотри, как уменьшается ошибка.' : `Off to practise: I'll look around the studio and try to paint what I see. Every attempt trains my hand network — watch the error go down.`, practice: true, mood: 'think' };
+  if (it.type === 'teach') {
+    const ru = /[а-яё]/i.test(text), id = subjectsIn(it.label)[0], name = id ? (ru ? RU_NAME[id] : id) : it.label.toLowerCase();
+    return { text: ru ? `Покажи мне, как выглядит «${name}»: нарисуй в окошке или пришли фото со словами «это ${name}».` : `Show me what a “${name}” looks like: draw it in the pad, or send a photo saying “this is a ${name}”.`, teach: id || it.label.toLowerCase(), teachName: name, mood: 'talk' };
+  }
   if (it.type === 'dream') return { text: `Going to dream for a minute: I'll breed marks on my own and judge them with my current taste. My taste only changes when **you** rate things — dreaming improves the *designs*, not the judge.`, dream: true, mood: 'think', chips: ['Show your brain', 'Evolve a logo with me'] };
   if (it.type === 'evolve') {
     const ex = it.spec || {};
@@ -186,8 +193,8 @@ export function respond(text, state = {}) {
     return { text: `Here's my thinking on the ${KINDS[last.kind]?.label.toLowerCase() || 'design'}:\n${d.notes}\nIf something feels off, tell me what — *"darker"*, *"simpler"*, *"serif"*, *"another one"* — and I'll adjust.`, mood: 'talk', chips: CHIPS[last.kind] };
   }
   if (it.type === 'muse') return { text: pick(['Hold on — I need to find my muse. Back in a few wingbeats…', 'Let me fly around the studio and look for inspiration…', 'Inspiration is never on the desk. Let me look around…'], seed), muse: true, mood: 'think' };
-  if (it.type === 'greet' && /[а-яё]/i.test(text)) return { text: `Hi! I'm the **Designfly** — a fruit fly who designs. I speak English, but I understand Russian requests: *«создай логотип пекарни Колобок»*, *«план 2-комнатной квартиры»*, *«сделай темнее»*. Ask me about design or ask me to draw something.`, mood: 'talk', chips: ['Логотип для кофейни «Синий Боб»', 'Нарисуй кота и луну', 'Напиши автопортрет', 'Сам придумай логотип без шаблонов', 'Покажи мозг', 'What makes a good logo?'] };
-  if (it.type === 'greet') return { text: `Hi! I'm the **Designfly** — a fruit fly with strong opinions about kerning. Ask me anything about design, or ask me to make something: a logo, palette, poster, floor plan, fashion flat, product sketch, UI…`, mood: 'talk', chips: ['Logo for a coffee shop called Blue Bean', 'Draw a cat looking at the moon', 'Paint a self-portrait', 'Evolve a logo without templates', 'Inspire me', 'Show your brain', '2-bedroom apartment floor plan', 'What makes a good logo?'] };
+  if (it.type === 'greet' && /[а-яё]/i.test(text)) return { text: `Hi! I'm the **Designfly** — a fruit fly who designs. I speak English, but I understand Russian requests: *«создай логотип пекарни Колобок»*, *«план 2-комнатной квартиры»*, *«сделай темнее»*. Ask me about design or ask me to draw something.`, mood: 'talk', chips: ['Логотип для кофейни «Синий Боб»', 'Научись рисовать', 'Напиши автопортрет', 'Сам придумай логотип без шаблонов', 'Покажи мозг', 'What makes a good logo?'] };
+  if (it.type === 'greet') return { text: `Hi! I'm the **Designfly** — a fruit fly with strong opinions about kerning. Ask me anything about design, or ask me to make something: a logo, palette, poster, floor plan, fashion flat, product sketch, UI…`, mood: 'talk', chips: ['Logo for a coffee shop called Blue Bean', 'Draw a cat looking at the moon', 'Practise painting', 'Paint a self-portrait', 'Evolve a logo without templates', 'Inspire me', 'Show your brain', '2-bedroom apartment floor plan', 'What makes a good logo?'] };
   if (it.type === 'thanks') return { text: pick(['Happy to help — buzz me any time.', 'My pleasure. Want a variation?', 'Glad you like it! Download it from the card below the drawing.'], seed), mood: 'happy', chips: last ? CHIPS[last.kind] : [] };
   if (it.type === 'help') return { text: helpText(), mood: 'talk', chips: ['Brand identity for a surf school called Swell', 'Swiss poster "Form & Void"', 'Hoodie flat with a graphic print', 'Sketch a ceramic vase'] };
   if (it.type === 'create') {
@@ -224,7 +231,7 @@ ${Object.values(KINDS).map((k) => `- **${k.label}** — ${k.about}`).join('\n')}
 
 Talk to me like a designer: *"logo for a coffee shop called Blue Bean, warm and minimal"*, then *"make it darker"*, *"another one"*, *"hand-drawn"*, *"now a business card"*.
 Logos, posters, cards, patterns and drawings I **draw myself, stroke by stroke** (crooked but mine — 👍 / 👎 teaches my hand); say *"template version"* for the clean engine. Ask me to *"draw a cat looking at the moon"* or *«нарисуй ракету»*.
-I also **paint** with a brush — from life (*"paint the studio"*, *«напиши автопортрет»*), from your photo (attach it and say *"paint this"*), from memory or as an abstraction. Every painting is practice: my brushwork gets better.
+I also **paint** — with my own neural network: a hand that decides every brush stroke and an eye that remembers and imagines. A newborn brain only scribbles; it learns by practising (*"practise painting"*, *«научись рисовать»*), and you can **teach** it things (*«научу тебя рисовать кота»* opens a drawing pad, or send a photo with *«это кот»*). Then: *"paint the studio"*, *«напиши автопортрет»*, *"imagine a painting"*, *«нарисуй кота»*.
 I also **answer**: colour theory, contrast checks (*"#777 on #fff"*), what goes with a colour, font pairing, type scales, print sizes, social sizes, UI/UX, floor plans and room sizes, interiors, fashion, product design, portfolio and pricing.
 Drop an **image** and I'll critique it.`;
 }

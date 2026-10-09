@@ -495,7 +495,7 @@ export class Studio3D {
       tgt.flap = m === 'fly_home' && u > 0.92 ? 0 : 1; tgt.wings = 1; tgt.tuck = 1; tgt.pitch = -0.1;
       if (m === 'fly_to_board') { tgt.reach = e; pencilOn = u > 0.4; tipUV = this._pencilUV(0); }
       if (u >= 1) {
-        if (m === 'fly_to_board') { this._setMode('drawing'); this.drawDur = this.live ? this.live.dur : 5200 + Math.random() * 1500; }
+        if (m === 'fly_to_board') { if (this.practicing) this._setMode('practice'); else { this._setMode('drawing'); this.drawDur = this.live ? this.live.dur : 5200 + Math.random() * 1500; } }
         else { p.y = 0; this._setMode('present'); }
       }
     } else if (m === 'drawing') {
@@ -508,6 +508,13 @@ export class Studio3D {
       p.th = lerpAngle(p.th, -Math.PI / 2 - 0.42, 1 - Math.exp(-dt / 120));
       tgt.flap = 1; tgt.wings = 1; tgt.tuck = 1; tgt.reach = 1; tgt.pitch = 0.12;
       if (u >= 1) { this.reveal = 1; this.live = null; this._pencilColour(); this._paintBoard(); this.flight = { from: new THREE.Vector3(p.x, p.y, p.z), to: HOME.clone(), dur: 1400 }; this._setMode('fly_home'); }
+    } else if (m === 'practice') {         // hovering at the easel, trying strokes
+      const uv = [0.5 + 0.36 * Math.sin(t * 0.0021) * Math.cos(t * 0.0009), 0.5 + 0.32 * Math.sin(t * 0.0017 + 1.3)]; tipUV = uv; pencilOn = true;
+      const h = this._hoverFor(this.boardPoint(uv[0], uv[1]));
+      p.x = lerp(p.x, h.x, 1 - Math.exp(-dt / 140)); p.y = lerp(p.y, h.y + Math.sin(t * 0.004) * 0.08, 1 - Math.exp(-dt / 140)); p.z = lerp(p.z, h.z, 1 - Math.exp(-dt / 140));
+      p.th = lerpAngle(p.th, -Math.PI / 2 - 0.42, 1 - Math.exp(-dt / 120));
+      tgt.flap = 1; tgt.wings = 1; tgt.tuck = 1; tgt.reach = 1; tgt.pitch = 0.12;
+      if (!this.practicing) { this.flight = { from: new THREE.Vector3(p.x, p.y, p.z), to: HOME.clone(), dur: 1400 }; this._setMode('fly_home'); }
     } else if (m === 'present') {
       tgt.point = T < 2600 ? 1 : 0; tgt.talk = 0.6; tgt.look = -0.35; tgt.prob = 0.2;
       p.th = lerpAngle(p.th, Math.PI / 2 + 0.55, 1 - Math.exp(-dt / 250));
@@ -566,8 +573,18 @@ export class Studio3D {
     this.renderer.render(this.scene, this.camera);
   }
 
-  get busy() { return ['fly_to_board', 'drawing', 'fly_home', 'present'].includes(this.mode); }
+  get busy() { return ['fly_to_board', 'drawing', 'fly_home', 'present', 'practice'].includes(this.mode); }
+  /** go to the easel and keep trying strokes until stopPractice() */
+  startPractice() {
+    this.practicing = true;
+    if (['drawing', 'fly_to_board', 'practice'].includes(this.mode)) return;
+    if (this.mode === 'muse') { this.spark.visible = false; const d = this.museDone; this.museDone = null; d?.(null); }
+    this.drawDone = null;
+    this.flight = { from: new THREE.Vector3(this.p.x, this.p.y, this.p.z), to: this._hoverFor(this.boardPoint(0.5, 0.5)), dur: 1300 };
+    this._setMode('fly_to_board');
+  }
+  stopPractice() { this.practicing = false; }
   stateLabel() {
-    return { idle: this.walkTarget ? 'wandering' : 'idle', groom: 'grooming', think: 'thinking…', talk: 'talking', hop: 'happy', muse: this.museSteps?.[this.museI]?.type === 'idea' ? 'got an idea!' : 'looking for inspiration…', fly_to_board: 'flying to the board', drawing: 'drawing', fly_home: 'landing', present: 'presenting' }[this.mode] || this.mode;
+    return { idle: this.walkTarget ? 'wandering' : 'idle', groom: 'grooming', think: 'thinking…', talk: 'talking', hop: 'happy', muse: this.museSteps?.[this.museI]?.type === 'idea' ? 'got an idea!' : 'looking for inspiration…', fly_to_board: 'flying to the board', drawing: 'drawing', fly_home: 'landing', present: 'presenting', practice: 'practising' }[this.mode] || this.mode;
   }
 }

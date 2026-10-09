@@ -90,7 +90,8 @@ export function extract(text) {
   const cap = t.match(/(?:\bdraw|\bdoodle|\bsketch of|\bpicture of|\bpaint(?:ing)? of|нарисуй|нарисовать|рисунок|картину|картина)\s+(?:me\s+|мне\s+)?(?:an?\s+|the\s+|some\s+|my\s+)?([^,.!?]{2,28})/i);
   if (cap && !/^(something|anything|что-нибудь|что-то|чего-нибудь|it|this|that|one|another|logo|логотип|его|её|ее|это|ещ|картин|portrait|автопортрет|студи|studio)/i.test(cap[1]) && !subjectsIn(cap[1].split(/\s+/)[0]).length) spec.caption = cap[1].trim();
   if (/[а-яё]/i.test(t)) spec.lang = 'ru';
-  if (/\b(self[- ]?portrait|yourself|your own face)\b|автопортрет|себя/.test(low)) spec.scene = 'self';
+  if (/\b(imagine|imagination|from your head|dream up|your own idea|out of your head)\b|придумай|воображ|из головы|фантаз/.test(low)) spec.scene = 'imagine';
+  else if (/\b(self[- ]?portrait|yourself|your own face)\b|автопортрет|себя/.test(low)) spec.scene = 'self';
   else if (/\babstract|абстрак/.test(low)) spec.scene = 'abstract';
   else if (/\b(studio|room|from life|still life|what you see|around you)\b|студи|комнат|натур|натюрморт|вокруг/.test(low)) spec.scene = 'studio';
   // type style
@@ -168,7 +169,10 @@ export function parse(text, last) {
   if (/^(thanks|thank you|thx|ty|cool|great|nice|awesome|love it|perfect|amazing|спасибо|класс|круто|супер|отлично|огонь)(?=[\s!.,]|$)/i.test(t) && t.length < 40) return { type: 'thanks', raw: t };
   if (/^(help|what can you do|commands|\/help|what do you do|what can i ask|что ты умеешь|что умеешь|помощь|помоги|что ты можешь)(?=[\s!.,?]|$)/i.test(t)) return { type: 'help', raw: t };
   if (/\b(show (me )?(your |the )?(brain|mind|neurons)|your (brain|mind|neurons)|brain view|open (the |your )?brain|neurons?)\b|мозг|нейрон/i.test(t)) return { type: 'brain', raw: t };
-  if (/\b(dream|self[- ]?train|practi[cs]e|train yourself|improve yourself|keep learning|go learn|learn on your own|get better)\b|мечта|снов|тренируйся|совершенствуйся|учись сам/i.test(t)) return { type: 'dream', raw: t };
+  if (/\b(practi[cs]e (painting|drawing|your (brush|hand|painting))|learn (to|how to) (paint|draw)|go practi[cs]e|train (your )?(hand|brush|painting|artist)|practi[cs]e( more)?|keep practi[cs]ing|art (school|lesson))\b|учись рисовать|научись рисовать|тренируйся рисовать|потренируйся|практикуйся|поучись|иди учись|тренируй руку|урок рисования/i.test(t)) return { type: 'practice', raw: t };
+  const teach = t.match(/\b(?:i'?ll teach you|let me (?:show|teach) you|teach you)\s+(?:to |how to )?(?:draw|paint)?\s*(?:an? |the )?([\p{L}-]{2,24})/iu) || t.match(/(?:научу тебя|покажу тебе|научить тебя|давай научу)\s+(?:рисовать |как выглядит |как выглядят )?([\p{L}-]{2,24})/iu);
+  if (teach) return { type: 'teach', label: teach[1], raw: t };
+  if (/\b(dream|self[- ]?train|train yourself|improve yourself|keep learning|go learn|learn on your own|get better)\b|мечта|снов|тренируйся|совершенствуйся|учись сам/i.test(t)) return { type: 'dream', raw: t };
   if (/\b(evolve|evolution|evolved|breed|teach you|learn my taste|my taste|your own (logo|mark|design|idea)|invent|from scratch|genetic)\b|эволю|обучи|научи|мой вкус|свой (знак|логотип)|сам(а)? (придумай|сделай)/i.test(t)) return { type: 'evolve', spec: extract(t), raw: t };
   const kind = detectKind(t);
   const spec = extract(t);

@@ -218,3 +218,17 @@ dialog::backdrop { background: rgba(5, 4, 3, .72); backdrop-filter: blur(4px); }
   .top { padding: 10px 14px; } .brand { min-width: 0; flex: 1; }
   .foot { height: auto; padding: 8px 12px; }
 }
+
+/* artist brain */
+.art .art-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.art figure { margin: 0; text-align: center; }
+.art figure canvas { width: 92px; height: 92px; image-rendering: auto; border-radius: 8px; background: #fff; display: block; }
+.art figcaption { font-size: 10.5px; color: var(--muted, #9a948c); margin-top: 3px; }
+.art .art-side { flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px; min-width: 150px; }
+.art .spark { width: 100%; max-width: 220px; height: 46px; }
+.teachpad #tp-canvas { width: 100%; max-width: 320px; aspect-ratio: 1; background: #fff; border-radius: 10px; touch-action: none; cursor: crosshair; display: block; margin: 6px auto; }
+.tp-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0 8px; }
+#tp-swatches { display: flex; gap: 4px; flex-wrap: wrap; }
+#tp-swatches button { width: 20px; height: 20px; border-radius: 50%; border: 2px solid rgba(255,255,255,.15); padding: 0; cursor: pointer; }
+#tp-swatches button.on { border-color: var(--accent); transform: scale(1.15); }
+#tp-size { width: 90px; }

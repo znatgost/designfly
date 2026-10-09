@@ -5,6 +5,10 @@ import { askLLM, PROVIDERS } from './llm.js';
 import { generate, normalize, KINDS } from './design/index.js';
 import { embedFonts, svgToCanvas, svgToPngBlob, svgUrl, svgSize, download, zip, slug, loadImage } from './export.js';
 import { paintingDesign } from './paint/index.js';
+import { RU_NAME } from './hand/compose.js';
+import { ArtistClient } from './artist/client.js';
+import { subjectsIn } from './hand/concepts.js';
+import { opsToSVG, timeline } from './hand/render.js';
 import { analyzeImage, fileToDataUrl } from './critique.js';
 import { setMeasurer, FONTS } from './design/type.js';
 import { Mind } from './learn/mind.js';
@@ -28,7 +32,7 @@ const history = [];                 // chat history for the LLM: { role, text }
 let last = LS.get('last', null);    // last engine spec (design context)
 let attached = null;                // dataURL of an attached image
 let busy = false;
-let cfg = { provider: 'offline', key: '', model: '', base: '', muse: true, hand: true, ...LS.get('cfg', {}) };
+let cfg = { provider: 'offline', key: '', model: '', base: '', muse: true, hand: true, practice: true, ...LS.get('cfg', {}) };
 delete cfg.six;
 let manual = false;
 let taste = null, lastPhoto = null, restoring = false;
@@ -70,6 +74,7 @@ async function boot() {
   buildUI();
   buildBrainUI();
   restoreGallery();
+  setTimeout(() => { if (cfg.practice !== false) getArtist(); }, 8000);     // wake the artist brain so it can practise when idle
   greet();
   $('#loading').classList.add('done');
   requestAnimationFrame(frame);
@@ -123,7 +128,7 @@ function toast(t) { const d = document.createElement('div'); d.className = 'toas
 function updateEngine() { $('#st-engine').textContent = cfg.provider === 'offline' ? 'offline' : (cfg.model || PROVIDERS[cfg.provider].model); }
 
 function openSettings() {
-  $('#set-provider').value = cfg.provider; $('#set-key').value = cfg.key || ''; $('#set-model').value = cfg.model || ''; $('#set-base').value = cfg.base || ''; $('#set-muse').checked = cfg.muse !== false; $('#set-hand').checked = cfg.hand !== false;
+  $('#set-provider').value = cfg.provider; $('#set-key').value = cfg.key || ''; $('#set-model').value = cfg.model || ''; $('#set-base').value = cfg.base || ''; $('#set-muse').checked = cfg.muse !== false; $('#set-hand').checked = cfg.hand !== false; $('#set-practice').checked = cfg.practice !== false;
   syncSettingsRows(); $('#set-status').textContent = ''; $('#settings').showModal();
 }
 function syncSettingsRows() {
@@ -133,7 +138,7 @@ function syncSettingsRows() {
   $('#row-base').classList.toggle('hidden', !['custom', 'openai', 'openrouter'].includes($('#set-provider').value));
   $('#set-model').placeholder = p.model || ''; $('#set-base').placeholder = p.base || '';
 }
-function readSettings() { cfg = { provider: $('#set-provider').value, key: $('#set-key').value.trim(), model: $('#set-model').value.trim(), base: $('#set-base').value.trim(), muse: $('#set-muse').checked, hand: $('#set-hand').checked }; }
+function readSettings() { cfg = { provider: $('#set-provider').value, key: $('#set-key').value.trim(), model: $('#set-model').value.trim(), base: $('#set-base').value.trim(), muse: $('#set-muse').checked, hand: $('#set-hand').checked, practice: $('#set-practice').checked }; }
 async function testSettings() {
   readSettings(); const st = $('#set-status');
   if (cfg.provider === 'offline') { st.textContent = 'offline brain is always on ✓'; return; }
@@ -197,7 +202,9 @@ async function send() {
   try {
     const local = text && !img && ['brain', 'dream', 'evolve'].includes(parse(text, last).type);
     if (local) reply = respond(text, { last });
-    if (img && /\b(paint|draw|sketch|portrait)|нарису|картин|напиши|портрет|маслом|красками|акварел/i.test(text) && !/\b(critique|review|feedback|rate|opinion|what do you think|analy[sz]e)\b|оцени|критик|мнение|что скажешь|разбери|как тебе/i.test(text)) {
+    const teachM = img && text.match(/^(?:это|вот|this is|it'?s|that'?s|запомни[,:]?|remember[,:]?)\s+(?:an?\s+|the\s+|мой\s+|my\s+)?([\p{L}-]{2,24})/iu);
+    if (teachM) reply = { text: '', teachPhoto: { img, label: teachM[1] }, mood: 'happy' };
+    if (!reply && img && /\b(paint|draw|sketch|portrait)|нарису|картин|напиши|портрет|маслом|красками|акварел/i.test(text) && !/\b(critique|review|feedback|rate|opinion|what do you think|analy[sz]e)\b|оцени|критик|мнение|что скажешь|разбери|как тебе/i.test(text)) {
       const ru = /[а-яё]/i.test(text);
       reply = { text: ru ? 'Сначала хорошенько посмотрю… теперь пишу.' : 'Let me look at it properly first… painting now.', specs: [normalize({ kind: 'painting', scene: 'photo', seed: Math.floor(Math.random() * 1e6), lang: ru ? 'ru' : undefined })], photo: img, mood: 'draw', chips: ['Paint it again', 'Abstract painting', 'Self-portrait'] };
     }
@@ -220,9 +227,13 @@ async function send() {
   if (reply.evolve) startEvolution(reply.evolve, el);
   if (reply.dream) startDream(el);
   if (reply.muse) startMuse(el);
+  if (reply.practice) startPractice(el, 45000);
+  if (reply.teach) openTeachPad(reply.teach, reply.teachName);
+  if (reply.teachPhoto) await teachFromPhoto(el, reply.teachPhoto);
   if (reply.variation && reply.specs?.[0]?.genome) reply.specs[0].genome = mindVariation(reply.specs[0].genome);
   const made = [];
-  for (const sp of reply.specs || []) { try { made.push(sp.kind === 'painting' ? await makePainting(sp, reply.photo) : makeDesign(sp)); } catch (e) { console.error(e); addMsg('fly', md('I tried to draw that but my pencil broke: ' + e.message), 'err'); } }
+  for (const sp of reply.specs || []) { try { const knownSub = sp.kind === 'drawing' && artist && sp.subject?.find((s2) => artist.knows(s2));
+    made.push(sp.kind === 'painting' || knownSub ? await makePainting(knownSub ? { ...sp, kind: 'painting', scene: 'memory', subject: [knownSub] } : sp, reply.photo, el) : makeDesign(sp)); } catch (e) { console.error(e); addMsg('fly', md('I tried to draw that but my pencil broke: ' + e.message), 'err'); } }
   for (const svg of reply.svgs || []) made.push(customDesign(svg));
   for (const d of made) attachCard(el, d);
   if (made.length && reply.chips) setChips(handChips(reply.chips, made[made.length - 1]));
@@ -292,21 +303,195 @@ async function paintingRef(spec, photo) {
   return null;
 }
 const sawAsset = (d) => d.ref ? [{ name: 'what-i-looked-at.svg', svg: `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${d.w} ${d.h}" width="${d.w}" height="${d.h}"><title>What the fly looked at</title><image href="${d.ref}" xlink:href="${d.ref}" width="${d.w}" height="${d.h}" preserveAspectRatio="none"/></svg>` }] : [];
-async function makePainting(spec, photo) {
+const labelOf = (w) => subjectsIn(w)[0] || String(w).toLowerCase();
+async function makePainting(spec, photo, msgEl = null) {
   spec = { ...spec };
   const fresh = !(spec.paint && last && last.kind === 'painting' && last.seed === spec.seed);
   if (fresh) spec.paint = taste.sample('painting');
-  let ref = null;
+  const a = await getArtist();
+  if (!a) return makeClassicPainting(spec, photo);
+  // a newborn hand has never held a brush: practise first
+  if (a.steps < 250) {
+    const el = msgEl || addMsg('fly', md(spec.lang === 'ru' ? 'Я ещё ни разу не держала кисть — сначала потренируюсь…' : "I've never held a brush — let me practise first…"));
+    await startPractice(el, 25000, true);
+  }
+  let ref = null, z = null, note = '';
   const prev = !fresh && designs.findLast((x) => x.kind === 'painting' && x.spec.seed === spec.seed && x.ref);
-  try { ref = prev ? await imageRef(prev.ref, prev.what) : await paintingRef(spec, photo); } catch (e) { console.warn('no reference', e); }
-  if (!ref) spec.scene = 'abstract';
-  if (spec.scene === 'abstract' && !spec.genome && mind && Math.random() < 0.7) { const g = mind.favourite(); if (g) spec.genome = g; }
-  const d = ref ? paintingDesign(ref.img, normalize({ ...spec, kind: 'painting' }), ref.what) : generate({ ...spec, kind: 'painting' });
-  if (ref) { d.ref = ref.url; d.what = ref.what; d.assets = sawAsset(d); }
+  const sub = spec.subject?.[0];
+  try {
+    if (prev) ref = { ...(await imageRef(prev.ref, prev.what)), url: prev.ref };
+    else if ((spec.scene === 'memory' || spec.scene === 'imagine') && sub && a.knows(sub)) { const im = await a.recall(sub, spec.seed); ref = await imageRef(picUrl(im), `my memory of a ${sub}`); }
+    else if (spec.scene === 'imagine' || spec.scene === 'abstract' || (spec.scene === 'memory' && sub)) {
+      const im = await a.imagine({ seed: spec.seed }); z = im.z; ref = await imageRef(picUrl(im.img, 4), 'my imagination');
+      spec.scene = 'imagine';
+      if (sub) note = spec.lang === 'ru' ? `Я пока не знаю, как выглядит «${sub}» — нарисовала то, что пришло в голову. Научи меня: пришли фото со словами «это ${sub}» или нарисуй сам.` : `I don't know what a “${sub}” looks like yet, so I painted what came to mind. Teach me: send a photo saying “this is a ${sub}”, or draw one for me.`;
+    } else ref = await paintingRef(spec, photo);
+  } catch (e) { console.warn('no reference', e); }
+  if (!ref) { const im = await a.imagine({ seed: spec.seed }); z = im.z; ref = await imageRef(picUrl(im.img, 4), 'my imagination'); spec.scene = 'imagine'; }
+  if (spec.scene !== 'imagine') a.see(ref.img, spec.scene === 'self' ? 'studio' : spec.scene);
+  const target = spec.dark ? { ...ref.img, data: ref.img.data.map((v, i) => (i % 4 === 3 ? v : v * 0.6)) } : ref.img;
+  const res = await a.paint(target, { ground: spec.dark ? 'grey' : spec.paint.ground, stretch: !spec.dark && (spec.scene === 'studio' || spec.scene === 'self') });
+  timeline(res.ops);
+  spec = normalize({ ...spec, kind: 'painting' });
+  const title = { studio: 'Studio corner', self: 'Self-portrait', photo: 'From your photo', memory: `${spec.lang === 'ru' && sub ? (RU_NAME[sub] || sub) : sub || 'Something'} — from memory`, imagine: 'From my imagination', abstract: 'From my imagination' }[spec.scene] || 'Painting';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${res.w} ${res.h}" width="${res.w}" height="${res.h}"><title>${esc(title)} — painted by a fly</title>${opsToSVG(res.ops)}</svg>`;
+  const notes = [`**${title}** — painted by my own neural network, stroke by stroke: ${res.strokes} strokes (${res.tried - res.strokes} more I considered and decided against). I looked at ${ref.what || 'it'} the whole time.`,
+    `My hand is a **${a.title}** after ${a.steps.toLocaleString()} practice steps. Likeness to what I looked at: **${Math.round(res.likeness * 100)} %**. Practise with me (*"practise painting"*) and it gets better.`, note].filter(Boolean).join('\n');
+  const d = { kind: 'painting', title, svg, w: res.w, h: res.h, notes, assets: [], palette: [...new Set(res.ops.filter((o) => o.nib === 'paint').map((o) => o.c))].slice(0, 6).map((hex, i) => ({ role: `paint ${i + 1}`, hex })), spec, ops: res.ops, hand: true, bg: res.ops[0].c, neural: true, z };
+  d.ref = ref.url; d.what = ref.what; d.assets = sawAsset(d);
   if (fresh) { taste.practicePainting(); updateHandStat(); }
+  d.id = `painting-${spec.seed}-${Math.random().toString(36).slice(2, 7)}`;
+  last = d.spec; LS.set('last', last);
+  updateArtStat();
+  return addDesign(d);
+}
+/** the older, rule-based painter — used only if the neural brain can't run */
+async function makeClassicPainting(spec, photo) {
+  let ref = null;
+  try { ref = await paintingRef(spec, photo); } catch {}
+  if (!ref) spec.scene = 'abstract';
+  const d = ref ? paintingDesign(ref.img, normalize({ ...spec, kind: 'painting', scene: spec.scene === 'imagine' ? 'abstract' : spec.scene }), ref.what) : generate({ ...spec, kind: 'painting', scene: 'abstract' });
+  if (ref) { d.ref = ref.url; d.what = ref.what; d.assets = sawAsset(d); }
   d.id = `painting-${d.spec.seed}-${Math.random().toString(36).slice(2, 7)}`;
   last = d.spec; LS.set('last', last);
   return addDesign(d);
+}
+/** a small RGBA picture → data URL (scaled up so the browser smooths it) */
+function picUrl(img, scale = 1) {
+  const c = Object.assign(document.createElement('canvas'), { width: img.w, height: img.h });
+  const x = c.getContext('2d'), id = x.createImageData(img.w, img.h); id.data.set(img.data); x.putImageData(id, 0, 0);
+  if (scale === 1) return c.toDataURL('image/png');
+  const c2 = Object.assign(document.createElement('canvas'), { width: img.w * scale, height: img.h * scale }), x2 = c2.getContext('2d');
+  x2.imageSmoothingQuality = 'high'; x2.drawImage(c, 0, 0, c2.width, c2.height); return c2.toDataURL('image/png');
+}
+
+// ------------------------------------------------------------------ the artist brain (src/artist)
+let artist = null, artistLoading = null, practising = false, stopPractice = false;
+function getArtist() {
+  if (artist) return Promise.resolve(artist);
+  return (artistLoading ||= (async () => {
+    const a = await new ArtistClient().start();
+    if ((a.s.views || 0) < 16) lookAround(a, 16);
+    artist = a; updateArtStat();
+    return a;
+  })().catch((e) => { console.warn('artist brain unavailable', e); artistLoading = null; return null; }));
+}
+/** the fly glances around the studio — one view per frame so the page never stalls */
+async function lookAround(a, n) {
+  if (!studio) return;
+  for (let i = 0; i < n; i++) {
+    await new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(r, { timeout: 600 }) : setTimeout(r, 60)));
+    if (view === 'brain' || document.hidden) continue;          // the studio isn't on screen: don't render it twice
+    const s = studio.snapshot(Math.random() < 0.2 ? 'self' : 'studio', 96, 72);
+    if (s) a.see(s.img, 'studio').catch(() => {});
+  }
+}
+function updateArtStat() { const el = $('#st-art'); if (el && artist) { el.textContent = artist.title; el.parentElement.title = `The fly's artist brain: ${artist.params.toLocaleString()} weights, ${artist.steps.toLocaleString()} practice steps, ${Object.keys(artist.concepts).length} things you taught it`; } }
+const toRGBA = (px, n) => { const d = new Uint8ClampedArray(n * n * 4); for (let i = 0; i < n * n; i++) { d[i * 4] = px[i * 3] * 255; d[i * 4 + 1] = px[i * 3 + 1] * 255; d[i * 4 + 2] = px[i * 3 + 2] * 255; d[i * 4 + 3] = 255; } return d; };
+function drawSpark(cv, hist) {
+  const x = cv.getContext('2d'), w = cv.width, h = cv.height; x.clearRect(0, 0, w, h);
+  if (hist.length < 2) return;
+  const lo = Math.min(...hist), hi = Math.max(...hist);
+  x.strokeStyle = '#8be9c1'; x.lineWidth = 2; x.beginPath();
+  hist.forEach((v, i) => { const px = (i / (hist.length - 1)) * (w - 4) + 2, py = h - 3 - ((v - lo) / ((hi - lo) || 1)) * (h - 6); i ? x.lineTo(px, py) : x.moveTo(px, py); });
+  x.stroke();
+}
+/** a practice session with a live card: what it looks at, its attempt, the error going down */
+async function startPractice(msgEl, ms = 45000, quietIntro = false) {
+  const a = await getArtist();
+  if (!a) { msgEl?.appendChild(Object.assign(document.createElement('p'), { className: 'muted small', textContent: 'My artist brain could not start in this browser (TensorFlow.js failed to load).' })); return; }
+  if (practising) return;
+  practising = true; stopPractice = false;
+  try { if ((a.s.views || 0) < 8) await lookAround(a, 8); } catch {}
+  const card = document.createElement('div'); card.className = 'evo art';
+  card.innerHTML = `<div class="evo-top"><b>🎨 Practising · <span class="lv">${a.title}</span></b><span class="acc">error <span class="err">—</span></span></div>
+    <div class="art-row"><figure><canvas class="tgt" width="32" height="32"></canvas><figcaption>what I look at</figcaption></figure><figure><canvas class="att" width="32" height="32"></canvas><figcaption>my attempt</figcaption></figure><figure><canvas class="img" width="32" height="32"></canvas><figcaption>I imagine…</figcaption></figure><div class="art-side"><canvas class="spark" width="150" height="46"></canvas><span class="small muted st"></span></div></div>
+    <div class="evo-foot"><button class="btn stop">■ Stop</button><button class="btn teachb">✎ Teach me something</button><button class="btn exp" title="Download the artist brain">⇩</button><label class="btn" title="Load an artist brain">⇧<input type="file" class="imp" accept="application/json" hidden></label><span class="muted small evo-hint">a real neural network (${a.params.toLocaleString()} weights) learning in your browser — nothing is built in</span></div>`;
+  (msgEl || addMsg('fly', '')).appendChild(card); $('#messages').scrollTop = 1e9;
+  card.querySelector('.stop').onclick = () => { stopPractice = true; a.stop(); };
+  card.querySelector('.teachb').onclick = () => openTeachPad('', '');
+  card.querySelector('.exp').onclick = async () => download('designfly-artist-brain.json', JSON.stringify(await a.dump()), 'application/json');
+  card.querySelector('.imp').onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { await a.load(JSON.parse(await f.text())); updateArtStat(); toast('Artist brain loaded'); } catch (err) { toast('Not an artist brain file'); } };
+  const put = (cv, px) => { const id = new ImageData(toRGBA(px, 32), 32, 32); cv.getContext('2d').putImageData(id, 0, 0); };
+  const board = Object.assign(document.createElement('canvas'), { width: 640, height: 320 }), bx = board.getContext('2d');
+  const small = Object.assign(document.createElement('canvas'), { width: 32, height: 32 });
+  studio?.startPractice();
+  let before = null, after = null, t0 = Date.now(), lastBoard = 0, steps0 = a.steps;
+  const update = ({ preview }) => {
+    put(card.querySelector('.tgt'), preview.target); put(card.querySelector('.att'), preview.canvas);
+    card.querySelector('.st').textContent = `${a.steps.toLocaleString()} practice steps · ${Math.max(0, Math.round((ms - (Date.now() - t0)) / 1000))} s left`;
+    card.querySelector('.lv').textContent = a.title;
+    if (Date.now() - (update.im || 0) > 2500) { update.im = Date.now(); a.imagine({ seed: Date.now() }).then((im) => card.querySelector('.img').getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(im.img.data), 32, 32), 0, 0)).catch(() => {}); }
+    if (studio && Date.now() - lastBoard > 900) {        // show the attempt on the easel
+      lastBoard = Date.now();
+      bx.fillStyle = '#f7f3ea'; bx.fillRect(0, 0, 640, 320); bx.imageSmoothingEnabled = true;
+      for (const [k, px] of [[0, preview.target], [1, preview.canvas]]) { small.getContext('2d').putImageData(new ImageData(toRGBA(px, 32), 32, 32), 0, 0); bx.drawImage(small, 20 + k * 310, 20, 290, 280); }
+      bx.fillStyle = '#555'; bx.font = '18px Caveat, cursive'; bx.fillText('what I see', 24, 316); bx.fillText('my attempt', 334, 316);
+      studio.setImage(board, 2, false);
+    }
+  };
+  try {
+    before = await a.exam(); after = before;
+    while (Date.now() - t0 < ms && !stopPractice) {
+      lookAround(a, 3);
+      await a.practice({ ms: Math.min(8000, ms - (Date.now() - t0)), onTick: update });
+      after = await a.exam();
+      if (before != null && after != null) card.querySelector('.err').textContent = `${before.toFixed(3)} → ${after.toFixed(3)}`;
+      drawSpark(card.querySelector('.spark'), a.history.slice(-60));
+      updateArtStat();
+    }
+  } catch (e) {
+    console.warn('practice failed', e);
+  } finally {
+    practising = false; studio?.stopPractice();
+    card.querySelector('.stop').disabled = true;
+  }
+  const done = a.steps - steps0, better = before > 0 && after != null ? Math.round((1 - after / before) * 100) : 0;
+  if ((!quietIntro || done) && before != null && after != null) msgEl?.appendChild(Object.assign(document.createElement('p'), { className: 'small', textContent: `${done.toLocaleString()} practice steps. My painting error went ${before.toFixed(3)} → ${after.toFixed(3)} (${better >= 0 ? '−' : '+'}${Math.abs(better)} %). Level: ${a.title}.` }));
+  studio?.setMood(better > 0 ? 'happy' : 'think');
+}
+/** quiet practice when nobody is asking for anything */
+setInterval(async () => {
+  if (cfg.practice === false || busy || practising || !artist || document.visibilityState !== 'visible' || !studio || studio.busy || studio.mode === 'muse') return;
+  practising = true;
+  try { lookAround(artist, 2); await artist.practice({ ms: 3000, yieldEvery: 1 }); updateArtStat(); } catch {} finally { practising = false; }
+}, 40000);
+/** a drawing pad: you draw something, name it, and the fly learns from your drawing */
+function openTeachPad(label = '', name = '') {
+  const dlg = $('#teachpad'), cv = $('#tp-canvas'), x = cv.getContext('2d');
+  $('#tp-label').value = name || label || '';
+  let col = '#1d1d1f', size = 10, drawing = false, lastP = null;
+  const hist = [];
+  const clear = () => { x.fillStyle = '#ffffff'; x.fillRect(0, 0, cv.width, cv.height); };
+  clear();
+  const sw = $('#tp-swatches'); sw.innerHTML = '';
+  for (const c of ['#1d1d1f', '#ffffff', '#e0533d', '#f08a3a', '#f6c945', '#5d9b4c', '#3f7fd0', '#8e6bd1', '#7a4a2a', '#f4a3b5', '#9aa0a8', '#8fcbea']) {
+    const b = document.createElement('button'); b.type = 'button'; b.style.background = c; b.onclick = () => { col = c; sw.querySelectorAll('button').forEach((q) => q.classList.toggle('on', q === b)); }; sw.appendChild(b);
+  }
+  sw.firstChild.classList.add('on');
+  $('#tp-size').oninput = (e) => { size = +e.target.value; };
+  const pos = (e) => { const r = cv.getBoundingClientRect(); return [((e.clientX - r.left) / r.width) * cv.width, ((e.clientY - r.top) / r.height) * cv.height]; };
+  cv.onpointerdown = (e) => { drawing = true; cv.setPointerCapture(e.pointerId); hist.push(x.getImageData(0, 0, cv.width, cv.height)); if (hist.length > 20) hist.shift(); lastP = pos(e); x.fillStyle = col; x.beginPath(); x.arc(lastP[0], lastP[1], size / 2, 0, Math.PI * 2); x.fill(); };
+  cv.onpointermove = (e) => { if (!drawing) return; const p = pos(e); x.strokeStyle = col; x.lineWidth = size; x.lineCap = 'round'; x.beginPath(); x.moveTo(...lastP); x.lineTo(...p); x.stroke(); lastP = p; };
+  cv.onpointerup = cv.onpointercancel = () => { drawing = false; };
+  $('#tp-undo').onclick = () => { const h = hist.pop(); if (h) x.putImageData(h, 0, 0); };
+  $('#tp-clear').onclick = () => { hist.push(x.getImageData(0, 0, cv.width, cv.height)); clear(); };
+  $('#tp-teach').onclick = async () => {
+    const lab = $('#tp-label').value.trim();
+    if (!lab) { $('#tp-label').focus(); return; }
+    dlg.close();
+    const el = addMsg('fly', md('…'));
+    await teachFromPhoto(el, { img: cv.toDataURL('image/png'), label: lab });
+  };
+  dlg.showModal();
+}
+async function teachFromPhoto(msgEl, { img, label }) {
+  const a = await getArtist();
+  if (!a) return;
+  const ref = await imageRef(img, '', 96), id = labelOf(label), n = await a.teach(ref.img, id);
+  msgEl.innerHTML = md(/[а-яё]/i.test(label) ? `Запомнила: это **${esc(label)}** (${n} ${n === 1 ? 'пример' : 'примера'}). Немного потренируюсь на нём…` : `Got it — that's a **${esc(label)}** (${n} example${n === 1 ? '' : 's'}). Let me practise on it a little…`);
+  await startPractice(msgEl, 12000, true);
+  setChips([/[а-яё]/i.test(label) ? `Нарисуй картину: ${label}` : `Paint a ${label} from memory`, 'Practise painting', 'Imagine a painting']);
 }
 function updateHandStat() { const el = $('#st-hand'); if (el && taste) el.textContent = Math.round(taste.skill * 100) + '%'; }
 function customDesign(svg) {
@@ -328,6 +513,7 @@ function attachCard(el, d) {
     if (c.dataset.rated) return;
     const sign = +b.dataset.r; c.dataset.rated = 1; b.classList.add('on');
     taste.feedback(d.kind, d.kind === 'painting' ? d.spec.paint : d.spec.hand, sign); updateHandStat();
+    if (sign > 0 && d.z && artist) artist.like(d.z);
     const fav = taste.favourites(d.kind);
     toast(sign > 0 ? (fav.length ? `Noted — I'm getting into ${fav.slice(0, 2).join(' and ')}` : 'Noted — more like this') : 'Noted — less of that');
     studio?.setMood(sign > 0 ? 'happy' : 'think');
@@ -348,7 +534,7 @@ async function showOnBoard(d, animate) {
 
 function persistGallery() {
   if (restoring) return;
-  LS.set('gallery', designs.slice(-40).map((d) => (d.kind === 'svg' ? (d.svg.length < 120000 ? { svg: d.svg } : null) : d.kind === 'painting' ? { painting: { spec: d.spec, ref: d.ref || null, what: d.what || '' } } : { spec: d.spec })).filter(Boolean));
+  LS.set('gallery', designs.slice(-40).map((d) => (d.kind === 'svg' ? (d.svg.length < 120000 ? { svg: d.svg } : null) : d.kind === 'painting' ? (d.neural ? (d.svg.length < 90000 ? { painting: { neural: true, svg: d.svg, spec: d.spec, title: d.title, notes: d.notes, w: d.w, h: d.h, ref: d.ref || null, what: d.what || '', palette: d.palette } } : null) : { painting: { spec: d.spec, ref: d.ref || null, what: d.what || '' } }) : { spec: d.spec })).filter(Boolean));
 }
 async function restoreGallery() {
   const g = LS.get('gallery', []);
@@ -357,7 +543,8 @@ async function restoreGallery() {
     try {
       if (item.painting) {
         const sp = item.painting.spec;
-        if (item.painting.ref) { const ref = await imageRef(item.painting.ref, item.painting.what); const d = paintingDesign(ref.img, sp, ref.what); d.ref = item.painting.ref; d.what = ref.what; d.assets = sawAsset(d); addDesign(d); }
+        if (item.painting.neural) { const P = item.painting, d = { kind: 'painting', title: P.title, svg: P.svg, w: P.w, h: P.h, notes: P.notes, palette: P.palette || [], spec: sp, hand: true, neural: true, ref: P.ref, what: P.what, id: `painting-${sp.seed}-${Math.random().toString(36).slice(2, 7)}` }; d.assets = sawAsset(d); addDesign(d); }
+        else if (item.painting.ref) { const ref = await imageRef(item.painting.ref, item.painting.what); const d = paintingDesign(ref.img, sp, ref.what); d.ref = item.painting.ref; d.what = ref.what; d.assets = sawAsset(d); addDesign(d); }
         else addDesign(generate(sp));
       } else if (item.spec) addDesign(generate(item.spec)); else customDesign(item.svg);
     } catch (e) { console.warn('could not restore', e); }
@@ -595,7 +782,7 @@ async function startDream(msgEl, ms = 30000, brand = null) {
 
 // ------------------------------------------------------------------ scripting hook (tools/capture.py, console)
 window.designfly = {
-  get studio() { return studio; }, get taste() { return taste; }, get designs() { return designs; }, get mind() { return mind; }, get brain() { return brain3d; }, setView: (v) => setView(v),
+  get studio() { return studio; }, get taste() { return taste; }, artist: () => getArtist(), get designs() { return designs; }, get mind() { return mind; }, get brain() { return brain3d; }, setView: (v) => setView(v),
   say: (t) => { $('#input').value = t; return send(); },
   make: (spec) => { const d = makeDesign(spec); return showOnBoard(d, true); },
   manual(on = true) { manual = on; },

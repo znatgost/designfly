@@ -37,6 +37,7 @@
   <div class="stats">
     <div class="stat"><span id="st-made">0</span><label>designs</label></div>
     <div class="stat" title="The fly's own design mind: 121 neurons that learn your taste"><span id="st-level">—</span><label>mind</label></div>
+    <div class="stat" title="The fly's artist brain — a neural network that learns to paint"><span id="st-art">—</span><label>artist</label></div>
     <div class="stat" title="How steady the fly's hand is — it improves with every drawing and with your 👍"><span id="st-hand">15%</span><label>hand</label></div>
     <div class="stat"><span id="st-engine">offline</span><label>brain</label></div>
     <div class="stat"><span id="st-state">idle</span><label>the fly is</label></div>
@@ -147,8 +148,21 @@
     <label id="row-base">Base URL <input id="set-base" placeholder="https://…/v1"></label>
     <p class="muted small" id="set-note">The key is stored only in this browser (localStorage) and sent only to the provider you choose.</p>
     <label class="row"><input type="checkbox" id="set-hand" checked> draw logos, posters, cards and patterns by hand (off = clean template engine)</label>
+    <label class="row"><input type="checkbox" id="set-practice" checked> when idle, the fly practises painting (its neural network keeps learning)</label>
     <label class="row"><input type="checkbox" id="set-muse" checked> when bored, the fly goes looking for inspiration around the studio</label>
     <div class="v-actions"><button class="btn go" id="set-save" type="submit">Save</button><button class="btn" id="set-test" type="button">Test</button><span class="small" id="set-status"></span></div>
+  </form>
+</dialog>
+
+<dialog id="teachpad" class="settings teachpad">
+  <form method="dialog">
+    <button class="close" data-close type="button">×</button>
+    <h3>Teach the fly</h3>
+    <p class="muted small">Draw something and tell the fly what it is. It remembers your drawing and practises on it — next time you ask for it, it paints it from memory.</p>
+    <canvas id="tp-canvas" width="320" height="320"></canvas>
+    <div class="tp-tools"><div id="tp-swatches"></div><input type="range" id="tp-size" min="3" max="40" value="10" title="brush size"><button class="btn" type="button" id="tp-undo">↶</button><button class="btn" type="button" id="tp-clear">clear</button></div>
+    <label>This is a… <input id="tp-label" placeholder="cat / кот" autocomplete="off"></label>
+    <div class="v-actions"><button class="btn go" type="button" id="tp-teach">Teach ✓</button></div>
   </form>
 </dialog>
 
